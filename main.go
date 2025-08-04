@@ -8,12 +8,9 @@ import (
 )
 
 func main() {
+
 	client := subsonic.Init(
-		"http://192.168.2.5:49153",
-		"yhkl",
-		"young331",
-		"goplayer",
-		"1.16.1",
+
 	)
 	songs, err := client.GetPlaylists()
 	if err != nil {
