@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"reflect"
+	"strings"
 	"syscall"
 	"time"
 
@@ -43,7 +44,7 @@ type Application struct {
 }
 
 func (a *Application) setupPagination() {
-	a.pageSize = 20
+	a.pageSize = 500
 	a.currentPage = 1
 }
 
@@ -54,8 +55,11 @@ func (a *Application) getCurrentPageData() []subsonic.Song {
 }
 
 func (a *Application) updateProgressBar() {
-	ticker := time.NewTicker(500 * time.Millisecond)
+	ticker := time.NewTicker(200 * time.Millisecond)
 	defer ticker.Stop()
+
+	progressChars := []string{"━", "─", "═", "■", "▉", "▊", "▋", "▌", "▍", "▎", "▏"}
+	selectedChar := progressChars[4]
 
 	for range ticker.C {
 		if a.mpvInstance == nil || !a.isPlaying {
@@ -70,57 +74,48 @@ func (a *Application) updateProgressBar() {
 		if err != nil {
 			continue
 		}
-
 		currentPos := pos.(float64)
 		totalDuration := duration.(float64)
+		progress := currentPos / totalDuration
 
-		var progress float64
-		if totalDuration > 0 {
-			progress = currentPos / totalDuration
-		}
-
-		const barWidth = 50
+		const barWidth = 40
 		filled := int(progress * barWidth)
 		empty := barWidth - filled
 
-		progressBar := "[green]"
-		for range filled {
-			progressBar += "━"
+		colorStart := tcell.ColorLightSeaGreen
+		colorEnd := tcell.ColorLightSkyBlue
+		progressBar := ""
+
+		for i := 0; i < filled; i++ {
+			ratio := float64(i) / float64(barWidth)
+			r, g, b := colorStart.RGB()
+			r2, g2, b2 := colorEnd.RGB()
+
+			cr := int32(float64(r) + float64(r2-r)*ratio)
+			cg := int32(float64(g) + float64(g2-g)*ratio)
+			cb := int32(float64(b) + float64(b2-b)*ratio)
+
+			color := tcell.NewRGBColor(cr, cg, cb)
+			progressBar += fmt.Sprintf("[#%06x]%s", color.Hex(), selectedChar)
 		}
-		progressBar += "[white]"
-		for range empty {
-			progressBar += "━"
-		}
+
+		progressBar += fmt.Sprintf("[gray]%s", strings.Repeat(selectedChar, empty))
 
 		currentTime := formatDuration(int(currentPos))
 		totalTime := formatDuration(int(totalDuration))
+		timeDisplay := fmt.Sprintf("[white]%s [darkgray]/ [lightgray]%s", currentTime, totalTime)
+
+		var statusIcon string
+		if a.isPlaying {
+			statusIcon = "[green]▶"
+		} else {
+			statusIcon = "[yellow]⏸"
+		}
 
 		a.application.QueueUpdateDraw(func() {
-			a.progressBar.SetText(fmt.Sprintf("%s %s / %s", progressBar, currentTime, totalTime))
+			a.progressBar.SetText(fmt.Sprintf("%s %s %s", statusIcon, progressBar, timeDisplay))
 		})
 	}
-}
-
-func (a *Application) updateSongInfo() {
-	if a.currentSong == nil {
-		return
-	}
-
-	song := a.currentSong
-	info := fmt.Sprintf("[yellow]Artist: [white]%s\n"+
-		"[yellow]Album: [white]%s\n"+
-		"[yellow]Title: [white]%s\n"+
-		"[yellow]Bitrate: [white]%d kbps\n"+
-		"[yellow]Size: [white]%.2f MB",
-		song.Artist,
-		song.Album,
-		song.Title,
-		song.BitRate,
-		float64(song.Size)/1024/1024)
-
-	a.application.QueueUpdateDraw(func() {
-		a.statsBar.SetText(info)
-	})
 }
 
 func (a *Application) prevPage() {
@@ -184,41 +179,54 @@ func (a *Application) createHomepage() {
 
 			a.mpvInstance.Play(playURL)
 			a.isPlaying = true
-			a.statusBar.SetText(fmt.Sprintf("[green]Playing: %s - %s",
+			info := fmt.Sprintf("[green]Playing: %s - %s\n"+
+				"[yellow]Album: [white]%s\n"+
+				"[yellow]Bitrate: [white]%d kbps\n"+
+				"[yellow]Size: [white]%.2f MB",
 				currentTrack.Title,
 				currentTrack.Artist,
-			))
+				currentTrack.Album,
+				currentTrack.BitRate,
+				float64(currentTrack.Size)/1024/1024)
+			a.statusBar.SetText(info)
 			a.currentSong = &currentTrack
-			go a.updateSongInfo()
 		}
 	})
-
-	bottomFlex := tview.NewFlex().
-		AddItem(a.statusBar, 0, 1, false).
-		AddItem(a.statsBar, 50, 0, false)
 
 	a.rootFlex = tview.NewFlex().
 		SetDirection(tview.FlexRow).
 		AddItem(a.songTable, 0, 1, true).
 		AddItem(a.progressBar, 1, 0, false).
-		AddItem(bottomFlex, 5, 0, false)
+		AddItem(a.statusBar, 7, 1, false)
 
 	a.application.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		if event.Key() == tcell.KeyRune && event.Rune() == ' ' {
 			if a.isPlaying {
 				a.mpvInstance.Pause()
 				a.isPlaying = false
-				a.statusBar.SetText(fmt.Sprintf("[yellow]Paused: %s - %s",
+				info := fmt.Sprintf("[yellow]Paused: %s - %s\n"+
+					"[yellow]Album: [white]%s\n"+
+					"[yellow]Bitrate: [white]%d kbps\n"+
+					"[yellow]Size: [white]%.2f MB",
 					a.currentSong.Title,
 					a.currentSong.Artist,
-				))
+					a.currentSong.Album,
+					a.currentSong.BitRate,
+					float64(a.currentSong.Size)/1024/1024)
+				a.statusBar.SetText(info)
 			} else {
 				a.mpvInstance.Pause()
 				a.isPlaying = true
-				a.statusBar.SetText(fmt.Sprintf("[green]Playing: %s - %s",
+				info := fmt.Sprintf("[green]Playing: %s - %s\n"+
+					"[yellow]Album: [white]%s\n"+
+					"[yellow]Bitrate: [white]%d kbps\n"+
+					"[yellow]Size: [white]%.2f MB",
 					a.currentSong.Title,
 					a.currentSong.Artist,
-				))
+					a.currentSong.Album,
+					a.currentSong.BitRate,
+					float64(a.currentSong.Size)/1024/1024)
+				a.statusBar.SetText(info)
 			}
 			return nil
 		}
@@ -254,12 +262,13 @@ func (a *Application) renderSongTable() {
 			a.songTable.SetCell(i+1, col, cells[i*5+col])
 		}
 	}
+	a.songTable.ScrollToBeginning()
 }
 
 func (a *Application) loadMusic() error {
 	songs, err := a.subsonicClient.GetPlaylists()
 	if err != nil {
-		return fmt.Errorf("获取歌曲列表失败: %v", err)
+		return fmt.Errorf("error get song list: %v", err)
 	}
 
 	if !reflect.DeepEqual(a.totalSongs, songs) {
@@ -282,6 +291,9 @@ func eventListener(ctx context.Context, m *mpv.Mpv) chan *mpv.Event {
 				return
 			default:
 				e := m.WaitEvent(1)
+				if e != nil && e.Event_Id == mpv.EVENT_END_FILE {
+					// TODO need to play next song
+				}
 				c <- e
 			}
 		}
