@@ -25,6 +25,8 @@ jobs:
           CGO_CFLAGS: "-I$(brew --prefix mpv)/include"
           CGO_LDFLAGS: "-L$(brew --prefix mpv)/lib -lmpv"
         run: |
+          export C_INCLUDE_PATH=/opt/homebrew/include:$C_INCLUDE_PATH
+          export LIBRARY_PATH=/opt/homebrew/lib:$LIBRARY_PATH
           GOOS=darwin GOARCH=arm64 go build -o navicli-darwin-arm64 .
           tar -czvf macos-binaries.tar.gz navicli-darwin-*
 
