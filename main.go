@@ -43,7 +43,7 @@ type Application struct {
 }
 
 func (a *Application) setupPagination() {
-	a.pageSize = 10
+	a.pageSize = 20
 	a.currentPage = 1
 }
 
