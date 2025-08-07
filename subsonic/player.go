@@ -9,7 +9,7 @@ import (
 
 func (c *Client) GetPlaylists() ([]Song, error) {
 	params := c.buildParams(map[string]string{
-		"size":   "20",
+		"size":   "500",
 		"format": "json",
 	})
 	requestUrl := fmt.Sprintf("%s/rest/getRandomSongs?%s", c.BaseURL, params.Encode())

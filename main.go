@@ -28,7 +28,10 @@ type Application struct {
 	application    *tview.Application
 	subsonicClient *subsonic.Client
 	mpvInstance    *mpvplayer.Mpvplayer
-	playList       []subsonic.Song
+	totalSongs     []subsonic.Song
+	currentPage    int
+	pageSize       int
+	totalPages     int
 
 	rootFlex    *tview.Flex
 	songTable   *tview.Table
@@ -37,6 +40,17 @@ type Application struct {
 	statsBar    *tview.TextView
 	currentSong *subsonic.Song
 	isPlaying   bool
+}
+
+func (a *Application) setupPagination() {
+	a.pageSize = 10
+	a.currentPage = 1
+}
+
+func (a *Application) getCurrentPageData() []subsonic.Song {
+	start := (a.currentPage - 1) * a.pageSize
+	end := min(start+a.pageSize, len(a.totalSongs))
+	return a.totalSongs[start:end]
 }
 
 func (a *Application) updateProgressBar() {
@@ -109,6 +123,30 @@ func (a *Application) updateSongInfo() {
 	})
 }
 
+func (a *Application) prevPage() {
+	if a.currentPage <= 1 {
+		return
+	}
+	a.currentPage--
+	a.application.QueueUpdateDraw(func() {
+		a.renderSongTable()
+		a.application.SetFocus(a.songTable)
+
+	})
+}
+
+func (a *Application) nextPage() {
+	fmt.Println("nextPage")
+	if a.currentPage >= a.totalPages {
+		return
+	}
+	a.currentPage++
+	a.application.QueueUpdateDraw(func() {
+		a.renderSongTable()
+		a.application.SetFocus(a.songTable)
+	})
+}
+
 func (a *Application) createHomepage() {
 	a.progressBar = tview.NewTextView().
 		SetDynamicColors(true)
@@ -133,22 +171,22 @@ func (a *Application) createHomepage() {
 	a.songTable.SetCell(0, 4, tview.NewTableCell("Duration").SetTextColor(tcell.ColorYellow))
 
 	a.songTable.SetSelectedFunc(func(row, column int) {
-		if row > 0 && row-1 < len(a.playList) {
-			currentTrack := a.playList[row-1]
+		if row > 0 && row-1 < len(a.totalSongs) {
+			currentTrack := a.totalSongs[row-1]
 			playURL := a.subsonicClient.GetPlayURL(currentTrack.ID)
 			a.mpvInstance.Queue = append(a.mpvInstance.Queue, mpvplayer.QueueItem{
 				Id:       currentTrack.ID,
 				Uri:      playURL,
 				Title:    currentTrack.Title,
-				Artist:   currentTrack.Title,
+				Artist:   currentTrack.Artist,
 				Duration: currentTrack.Duration,
 			})
-			a.mpvInstance.Play(playURL)
 
+			a.mpvInstance.Play(playURL)
 			a.isPlaying = true
 			a.statusBar.SetText(fmt.Sprintf("[green]Playing: %s - %s",
-				currentTrack.Artist,
 				currentTrack.Title,
+				currentTrack.Artist,
 			))
 			a.currentSong = &currentTrack
 			go a.updateSongInfo()
@@ -157,7 +195,7 @@ func (a *Application) createHomepage() {
 
 	bottomFlex := tview.NewFlex().
 		AddItem(a.statusBar, 0, 1, false).
-		AddItem(a.statsBar, 40, 0, false)
+		AddItem(a.statsBar, 50, 0, false)
 
 	a.rootFlex = tview.NewFlex().
 		SetDirection(tview.FlexRow).
@@ -171,22 +209,22 @@ func (a *Application) createHomepage() {
 				a.mpvInstance.Pause()
 				a.isPlaying = false
 				a.statusBar.SetText(fmt.Sprintf("[yellow]Paused: %s - %s",
-					a.mpvInstance.Queue[0].Title,
-					a.mpvInstance.Queue[0].Artist,
+					a.currentSong.Title,
+					a.currentSong.Artist,
 				))
 			} else {
 				a.mpvInstance.Pause()
 				a.isPlaying = true
 				a.statusBar.SetText(fmt.Sprintf("[green]Playing: %s - %s",
-					a.mpvInstance.Queue[0].Title,
-					a.mpvInstance.Queue[0].Artist,
+					a.currentSong.Title,
+					a.currentSong.Artist,
 				))
 			}
 			return nil
 		}
 
 		switch event.Key() {
-		case tcell.KeyEsc:
+		case tcell.KeyEsc, tcell.KeyENQ:
 			a.application.Stop()
 		}
 		return event
@@ -199,9 +237,9 @@ func (a *Application) renderSongTable() {
 	for i := a.songTable.GetRowCount() - 1; i > 0; i-- {
 		a.songTable.RemoveRow(i)
 	}
-
-	cells := make([]*tview.TableCell, 0, len(a.playList)*5)
-	for i, song := range a.playList {
+	pageData := a.getCurrentPageData()
+	cells := make([]*tview.TableCell, 0, len(pageData)*5)
+	for i, song := range pageData {
 		cells = append(cells,
 			tview.NewTableCell(fmt.Sprintf("%d", i+1)).SetAlign(tview.AlignRight),
 			tview.NewTableCell(song.Title).SetExpansion(1).SetMaxWidth(40),
@@ -211,7 +249,7 @@ func (a *Application) renderSongTable() {
 		)
 	}
 
-	for i := 0; i < len(a.playList); i++ {
+	for i := range pageData {
 		for col := range 5 {
 			a.songTable.SetCell(i+1, col, cells[i*5+col])
 		}
@@ -224,8 +262,9 @@ func (a *Application) loadMusic() error {
 		return fmt.Errorf("获取歌曲列表失败: %v", err)
 	}
 
-	if !reflect.DeepEqual(a.playList, songs) {
-		a.playList = songs
+	if !reflect.DeepEqual(a.totalSongs, songs) {
+		a.totalSongs = songs
+		a.totalPages = (len(a.totalSongs) + a.pageSize - 1) / a.pageSize
 		a.application.QueueUpdateDraw(func() {
 			a.renderSongTable()
 		})
@@ -305,7 +344,7 @@ func main() {
 		cancel()
 		app.application.Stop()
 	}()
-
+	app.setupPagination()
 	app.createHomepage()
 	go app.updateProgressBar()
 	go func() {

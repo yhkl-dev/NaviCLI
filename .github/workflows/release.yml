@@ -1,0 +1,32 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: "1.24"
+
+      - name: Build for multiple platforms
+        run: |
+          GOOS=darwin GOARCH=arm64 go build -o navicli-arm64 .
+          tar -czvf release.tar.gz navicli*
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            release.tar.gz
+          body: "## Changelog\n\n- Feature 1\n- Bug fix 2"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
