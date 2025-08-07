@@ -9,7 +9,7 @@ import (
 
 func (c *Client) GetPlaylists() ([]Song, error) {
 	params := c.buildParams(map[string]string{
-		"size":   "1",
+		"size":   "20",
 		"format": "json",
 	})
 	requestUrl := fmt.Sprintf("%s/rest/getRandomSongs?%s", c.BaseURL, params.Encode())
@@ -35,10 +35,6 @@ func (c *Client) GetPlaylists() ([]Song, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read response failed: %w", err)
 	}
-
-	// if c.Debug {
-	// 	fmt.Println("[DEBUG] Raw response:", string(body))
-	// }
 
 	var subsonicResp struct {
 		SubsonicResponse struct {
@@ -105,11 +101,10 @@ func (c *Client) SearchSongs(query string) ([]Song, error) {
 	return result.SubsonicResponse.SearchResult3.Songs, nil
 }
 
-func (c *Client) GetPlayURL(songID string, bitrate int) string {
+func (c *Client) GetPlayURL(songID string) string {
 	params := c.buildParams(map[string]string{
-		"id":         songID,
-		"format":     "mp3",
-		"maxBitRate": fmt.Sprintf("%d", bitrate),
+		"id":     songID,
+		"format": "mp3",
 	})
 	return fmt.Sprintf("%s/rest/stream.view?%s", c.BaseURL, params.Encode())
 }

@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"net/http"
 	"net/url"
+	"time"
 )
 
 var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
@@ -19,14 +20,13 @@ func randSeq(n int) string {
 }
 
 func Init(baseUrl, username, password, clientId, apiVersion string) *Client {
-	httpClient := &http.Client{}
 	client := &Client{
 		BaseURL:    baseUrl,
 		Username:   username,
 		Password:   password,
 		ClientID:   clientId,
 		APIVersion: apiVersion,
-		HttpClient: httpClient,
+		HttpClient: &http.Client{Timeout: 30 * time.Second},
 	}
 	return client
 }
