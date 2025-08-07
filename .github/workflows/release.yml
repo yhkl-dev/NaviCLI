@@ -7,28 +7,23 @@ on:
 
 jobs:
   build-and-release:
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v4
-        with:
-          go-version: "1.24"
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libmpv-dev
+      - name: Install mpv (macOS)
+        run: brew install mpv
 
-      - name: Build for multiple platforms
+      - name: Build macOS binaries
         env:
           CGO_ENABLED: 1
-          CGO_CFLAGS: "-I/usr/include/mpv"
-          CGO_LDFLAGS: "-lmpv"
+          CGO_CFLAGS: "-I$(brew --prefix mpv)/include"
+          CGO_LDFLAGS: "-L$(brew --prefix mpv)/lib -lmpv"
         run: |
-          GOOS=darwin GOARCH=arm64 go build -o navicli-arm64 .
-          tar -czvf release.tar.gz navicli*
+          # 原生编译 macOS 版本
+          GOOS=darwin GOARCH=arm64 go build -o navicli-darwin-arm64 .
+          # 打包
+          tar -czvf macos-binaries.tar.gz navicli-darwin-*
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
