@@ -14,15 +14,18 @@ jobs:
       - name: Install mpv (macOS)
         run: brew install mpv
 
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: "1.24"
+
       - name: Build macOS binaries
         env:
           CGO_ENABLED: 1
           CGO_CFLAGS: "-I$(brew --prefix mpv)/include"
           CGO_LDFLAGS: "-L$(brew --prefix mpv)/lib -lmpv"
         run: |
-          # 原生编译 macOS 版本
           GOOS=darwin GOARCH=arm64 go build -o navicli-darwin-arm64 .
-          # 打包
           tar -czvf macos-binaries.tar.gz navicli-darwin-*
 
       - name: Create Release
