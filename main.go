@@ -7,7 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"reflect"
-	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -41,11 +41,216 @@ type Application struct {
 	statsBar    *tview.TextView
 	currentSong *subsonic.Song
 	isPlaying   bool
+	isLoading   bool
+	loadingMux  sync.Mutex
+
+	currentSongIndex int
 }
 
 func (a *Application) setupPagination() {
 	a.pageSize = 500
 	a.currentPage = 1
+	a.currentSongIndex = -1
+	a.isLoading = false
+}
+
+func (a *Application) playSongAtIndex(index int) {
+	if index < 0 || index >= len(a.totalSongs) {
+		return
+	}
+
+	a.loadingMux.Lock()
+	if a.isLoading {
+		a.loadingMux.Unlock()
+		return
+	}
+	a.isLoading = true
+	a.currentSongIndex = index
+	currentTrack := a.totalSongs[index]
+	a.currentSong = &currentTrack
+	a.isPlaying = false
+	a.loadingMux.Unlock()
+
+	loadingBar := "[yellow]▓▓▓[darkgray]░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ Loading..."
+	info := fmt.Sprintf(`
+[white]Current %d:
+[yellow]%s [darkgray](Loading...)
+
+[darkgray][play] %s
+[darkgray][source] %.1f MB
+[darkgray][favourite]
+
+[gray]%s - %s
+[gray]%s
+%s`,
+		index+1,
+		currentTrack.Title,
+		formatDuration(currentTrack.Duration),
+		float64(currentTrack.Size)/1024/1024,
+		currentTrack.Artist,
+		currentTrack.Album,
+		currentTrack.Album,
+		loadingBar)
+
+	a.application.QueueUpdateDraw(func() {
+		if a.statusBar != nil {
+			a.statusBar.SetText(info)
+		}
+	})
+
+	go func() {
+		defer func() {
+			a.loadingMux.Lock()
+			a.isLoading = false
+			a.loadingMux.Unlock()
+
+			if r := recover(); r != nil {
+
+				a.isPlaying = false
+				a.application.QueueUpdateDraw(func() {
+					if a.statusBar != nil {
+						failedInfo := fmt.Sprintf(`
+[white]Current %d:
+[red]%s [darkgray](Failed)
+
+[darkgray][play] %s
+[darkgray][source] %.1f MB
+[darkgray][favourite]
+
+[gray]%s - %s
+[gray]%s
+[red]Play Failed`,
+							index+1,
+							currentTrack.Title,
+							formatDuration(currentTrack.Duration),
+							float64(currentTrack.Size)/1024/1024,
+							currentTrack.Artist,
+							currentTrack.Album,
+							currentTrack.Album)
+						a.statusBar.SetText(failedInfo)
+					}
+				})
+			}
+		}()
+
+		done := make(chan string, 1)
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+
+					done <- ""
+				}
+			}()
+			url := a.subsonicClient.GetPlayURL(currentTrack.ID)
+			done <- url
+		}()
+
+		var playURL string
+		select {
+		case playURL = <-done:
+			if playURL == "" {
+
+				return
+			}
+		case <-time.After(10 * time.Second):
+
+			return
+		}
+
+		if a.mpvInstance != nil {
+			a.mpvInstance.Queue = []mpvplayer.QueueItem{{
+				Id:       currentTrack.ID,
+				Uri:      playURL,
+				Title:    currentTrack.Title,
+				Artist:   currentTrack.Artist,
+				Duration: currentTrack.Duration,
+			}}
+
+			if a.mpvInstance.Mpv != nil {
+				a.mpvInstance.Stop()
+				time.Sleep(50 * time.Millisecond)
+			}
+
+			if a.mpvInstance.Mpv != nil {
+				a.mpvInstance.Play(playURL)
+
+				a.isPlaying = true
+
+				playingBar := "[lightgreen]▓[darkgray]░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ 0.0%"
+				playingInfo := fmt.Sprintf(`
+[white]Current %d:
+[lightgreen]%s
+
+[darkgray][play] %s
+[darkgray][source] %.1f MB
+[darkgray][favourite]
+
+[gray]%s - %s
+[gray]%s
+%s`,
+					index+1,
+					currentTrack.Title,
+					formatDuration(currentTrack.Duration),
+					float64(currentTrack.Size)/1024/1024,
+					currentTrack.Artist,
+					currentTrack.Album,
+					currentTrack.Album,
+					playingBar)
+
+				a.application.QueueUpdateDraw(func() {
+					if a.statusBar != nil {
+						a.statusBar.SetText(playingInfo)
+					}
+				})
+
+				time.Sleep(500 * time.Millisecond)
+			}
+		}
+	}()
+}
+
+func (a *Application) playNextSong() {
+	if len(a.totalSongs) == 0 {
+		return
+	}
+
+	a.loadingMux.Lock()
+	isCurrentlyLoading := a.isLoading
+	a.loadingMux.Unlock()
+
+	if isCurrentlyLoading {
+
+		return
+	}
+
+	nextIndex := a.currentSongIndex + 1
+	if nextIndex >= len(a.totalSongs) {
+		nextIndex = 0
+	}
+
+	go a.playSongAtIndex(nextIndex)
+}
+
+func (a *Application) playPreviousSong() {
+	if len(a.totalSongs) == 0 {
+		return
+	}
+
+	a.loadingMux.Lock()
+	isCurrentlyLoading := a.isLoading
+	a.loadingMux.Unlock()
+
+	if isCurrentlyLoading {
+
+		return
+	}
+
+	prevIndex := a.currentSongIndex - 1
+	if prevIndex < 0 {
+		prevIndex = len(a.totalSongs) - 1
+	}
+
+	go a.playSongAtIndex(prevIndex)
 }
 
 func (a *Application) getCurrentPageData() []subsonic.Song {
@@ -55,190 +260,401 @@ func (a *Application) getCurrentPageData() []subsonic.Song {
 }
 
 func (a *Application) updateProgressBar() {
-	ticker := time.NewTicker(200 * time.Millisecond)
+	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
-	progressChars := []string{"━", "─", "═", "■", "▉", "▊", "▋", "▌", "▍", "▎", "▏"}
-	selectedChar := progressChars[4]
+	for {
+		select {
+		case <-ticker.C:
+			if a.application == nil || a.mpvInstance == nil {
+				return
+			}
 
-	for range ticker.C {
-		if a.mpvInstance == nil || !a.isPlaying {
-			continue
+			a.loadingMux.Lock()
+			isCurrentlyLoading := a.isLoading
+			currentSongPtr := a.currentSong
+			currentIndex := a.currentSongIndex
+			isCurrentlyPlaying := a.isPlaying
+			a.loadingMux.Unlock()
+
+			if isCurrentlyLoading {
+
+				continue
+			}
+
+			if a.mpvInstance.Mpv == nil {
+				a.application.QueueUpdateDraw(func() {
+					if a.progressBar != nil {
+						idleDisplay := `
+[darkgray][about] [darkgray][credits] [darkgray][rss.xml]
+[darkgray][patreon] [darkgray][podcasts.apple]
+[darkgray][folder.jpg] [darkgray][enterprise mode]
+[darkgray][invert] [darkgray][fullscreen]`
+						a.progressBar.SetText(idleDisplay)
+					}
+				})
+				continue
+			}
+
+			if !isCurrentlyPlaying {
+				if currentSongPtr != nil {
+					a.application.QueueUpdateDraw(func() {
+						if a.progressBar != nil && a.statusBar != nil {
+							pausedDisplay := `
+[darkgray]00:00:00 [darkgray][v-] [darkgray]100% [darkgray][v+] [darkgray][random]`
+							a.progressBar.SetText(pausedDisplay)
+
+							progressBar := "[darkgray]▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░░░░░░ 0%"
+							statusInfo := fmt.Sprintf(`
+[white]Episode %d:
+[yellow]%s [darkgray](PAUSED)
+
+[darkgray][play] %s
+[darkgray][source] %.1f MB
+[darkgray][favourite]
+
+[gray]%s - %s
+[gray]%s
+%s`,
+								currentIndex+1,
+								currentSongPtr.Title,
+								formatDuration(currentSongPtr.Duration),
+								float64(currentSongPtr.Size)/1024/1024,
+								currentSongPtr.Artist,
+								currentSongPtr.Album,
+								currentSongPtr.Album,
+								progressBar)
+							a.statusBar.SetText(statusInfo)
+						}
+					})
+				}
+				continue
+			}
+
+			go func() {
+				defer func() {
+					if r := recover(); r != nil {
+					}
+				}()
+
+				if a.mpvInstance == nil || a.mpvInstance.Mpv == nil {
+					return
+				}
+
+				done := make(chan struct{})
+				var currentPos, totalDuration float64
+				var hasError bool
+
+				go func() {
+					defer func() {
+						if r := recover(); r != nil {
+							hasError = true
+						}
+						close(done)
+					}()
+
+					pos, err := a.mpvInstance.GetProperty("time-pos", mpv.FORMAT_DOUBLE)
+					if err != nil {
+						hasError = true
+						return
+					}
+					duration, err := a.mpvInstance.GetProperty("duration", mpv.FORMAT_DOUBLE)
+					if err != nil {
+						hasError = true
+						return
+					}
+					currentPos = pos.(float64)
+					totalDuration = duration.(float64)
+				}()
+
+				select {
+				case <-done:
+					if hasError {
+						return
+					}
+				case <-time.After(200 * time.Millisecond):
+					return
+				}
+
+				if totalDuration <= 0 || currentPos < 0 {
+					return
+				}
+
+				currentTime := formatDuration(int(currentPos))
+				totalTime := formatDuration(int(totalDuration))
+
+				progress := currentPos / totalDuration
+				if progress > 1 {
+					progress = 1
+				} else if progress < 0 {
+					progress = 0
+				}
+
+				progressBarWidth := 30
+				filledWidth := int(progress * float64(progressBarWidth))
+				progressBar := ""
+
+				for i := range progressBarWidth {
+					if i < filledWidth {
+						progressBar += "[lightgreen]▓"
+					} else {
+						progressBar += "[darkgray]░"
+					}
+				}
+				progressBar += fmt.Sprintf("[white] %.1f%%", progress*100)
+
+				progressText := fmt.Sprintf(`
+[darkgray]%s/%s [darkgray][random]`,
+					currentTime, totalTime)
+
+				select {
+				case <-time.After(10 * time.Millisecond):
+					return
+				default:
+					a.application.QueueUpdateDraw(func() {
+						if a.progressBar != nil {
+							a.progressBar.SetText(progressText)
+						}
+
+						if currentSongPtr != nil && a.statusBar != nil {
+							statusInfo := fmt.Sprintf(`
+[white]Current %d:
+[lightgreen]%s
+
+[darkgray][play] %s
+[darkgray][source] %.1f MB
+[darkgray][favourite]
+
+[gray]%s - %s
+[gray]%s
+%s`,
+								currentIndex+1,
+								currentSongPtr.Title,
+								formatDuration(currentSongPtr.Duration),
+								float64(currentSongPtr.Size)/1024/1024,
+								currentSongPtr.Artist,
+								currentSongPtr.Album,
+								currentSongPtr.Album,
+								progressBar)
+							a.statusBar.SetText(statusInfo)
+						}
+					})
+				}
+			}()
+
+		case <-time.After(15 * time.Second):
+			if a.application == nil {
+				return
+			}
 		}
-
-		pos, err := a.mpvInstance.GetProperty("time-pos", mpv.FORMAT_DOUBLE)
-		if err != nil {
-			continue
-		}
-		duration, err := a.mpvInstance.GetProperty("duration", mpv.FORMAT_DOUBLE)
-		if err != nil {
-			continue
-		}
-		currentPos := pos.(float64)
-		totalDuration := duration.(float64)
-		progress := currentPos / totalDuration
-
-		const barWidth = 40
-		filled := int(progress * barWidth)
-		empty := barWidth - filled
-
-		colorStart := tcell.ColorLightSeaGreen
-		colorEnd := tcell.ColorLightSkyBlue
-		progressBar := ""
-
-		for i := 0; i < filled; i++ {
-			ratio := float64(i) / float64(barWidth)
-			r, g, b := colorStart.RGB()
-			r2, g2, b2 := colorEnd.RGB()
-
-			cr := int32(float64(r) + float64(r2-r)*ratio)
-			cg := int32(float64(g) + float64(g2-g)*ratio)
-			cb := int32(float64(b) + float64(b2-b)*ratio)
-
-			color := tcell.NewRGBColor(cr, cg, cb)
-			progressBar += fmt.Sprintf("[#%06x]%s", color.Hex(), selectedChar)
-		}
-
-		progressBar += fmt.Sprintf("[gray]%s", strings.Repeat(selectedChar, empty))
-
-		currentTime := formatDuration(int(currentPos))
-		totalTime := formatDuration(int(totalDuration))
-		timeDisplay := fmt.Sprintf("[white]%s [darkgray]/ [lightgray]%s", currentTime, totalTime)
-
-		var statusIcon string
-		if a.isPlaying {
-			statusIcon = "[green]▶"
-		} else {
-			statusIcon = "[yellow]⏸"
-		}
-
-		a.application.QueueUpdateDraw(func() {
-			a.progressBar.SetText(fmt.Sprintf("%s %s %s", statusIcon, progressBar, timeDisplay))
-		})
 	}
-}
-
-func (a *Application) prevPage() {
-	if a.currentPage <= 1 {
-		return
-	}
-	a.currentPage--
-	a.application.QueueUpdateDraw(func() {
-		a.renderSongTable()
-		a.application.SetFocus(a.songTable)
-
-	})
-}
-
-func (a *Application) nextPage() {
-	fmt.Println("nextPage")
-	if a.currentPage >= a.totalPages {
-		return
-	}
-	a.currentPage++
-	a.application.QueueUpdateDraw(func() {
-		a.renderSongTable()
-		a.application.SetFocus(a.songTable)
-	})
 }
 
 func (a *Application) createHomepage() {
 	a.progressBar = tview.NewTextView().
 		SetDynamicColors(true)
+	a.progressBar.SetBorder(false)
 
 	a.statusBar = tview.NewTextView().
-		SetDynamicColors(true)
+		SetDynamicColors(true).
+		SetScrollable(false).
+		SetWrap(true)
+	a.statusBar.SetBorder(false)
 
 	a.statsBar = tview.NewTextView().
 		SetDynamicColors(true).
 		SetScrollable(true).
 		SetWrap(true)
+	a.statsBar.SetBorder(false)
 
 	a.songTable = tview.NewTable().
 		SetBorders(false).
 		SetSelectable(true, false).
 		SetFixed(1, 0)
 
-	a.songTable.SetCell(0, 0, tview.NewTableCell("#").SetTextColor(tcell.ColorYellow))
-	a.songTable.SetCell(0, 1, tview.NewTableCell("Song").SetTextColor(tcell.ColorYellow))
-	a.songTable.SetCell(0, 2, tview.NewTableCell("Artist").SetTextColor(tcell.ColorYellow))
-	a.songTable.SetCell(0, 3, tview.NewTableCell("Album").SetTextColor(tcell.ColorYellow))
-	a.songTable.SetCell(0, 4, tview.NewTableCell("Duration").SetTextColor(tcell.ColorYellow))
+	a.songTable.SetBorder(false)
+
+	headerStyle := tcell.StyleDefault.Foreground(tcell.ColorGray).Attributes(tcell.AttrBold)
+
+	a.songTable.SetCell(0, 0, tview.NewTableCell("").
+		SetStyle(headerStyle))
+	a.songTable.SetCell(0, 1, tview.NewTableCell("").
+		SetStyle(headerStyle))
+	a.songTable.SetCell(0, 2, tview.NewTableCell("").
+		SetStyle(headerStyle))
+	a.songTable.SetCell(0, 3, tview.NewTableCell("").
+		SetStyle(headerStyle))
+	a.songTable.SetCell(0, 4, tview.NewTableCell("").
+		SetStyle(headerStyle))
 
 	a.songTable.SetSelectedFunc(func(row, column int) {
 		if row > 0 && row-1 < len(a.totalSongs) {
-			currentTrack := a.totalSongs[row-1]
-			playURL := a.subsonicClient.GetPlayURL(currentTrack.ID)
-			a.mpvInstance.Queue = append(a.mpvInstance.Queue, mpvplayer.QueueItem{
-				Id:       currentTrack.ID,
-				Uri:      playURL,
-				Title:    currentTrack.Title,
-				Artist:   currentTrack.Artist,
-				Duration: currentTrack.Duration,
-			})
+			a.loadingMux.Lock()
+			isCurrentlyLoading := a.isLoading
+			a.loadingMux.Unlock()
 
-			a.mpvInstance.Play(playURL)
-			a.isPlaying = true
-			info := fmt.Sprintf("[green]Playing: %s - %s\n"+
-				"[yellow]Album: [white]%s\n"+
-				"[yellow]Bitrate: [white]%d kbps\n"+
-				"[yellow]Size: [white]%.2f MB",
-				currentTrack.Title,
-				currentTrack.Artist,
-				currentTrack.Album,
-				currentTrack.BitRate,
-				float64(currentTrack.Size)/1024/1024)
-			a.statusBar.SetText(info)
-			a.currentSong = &currentTrack
+			if isCurrentlyLoading {
+
+				return
+			}
+			go a.playSongAtIndex(row - 1)
 		}
 	})
 
+	leftPanel := tview.NewFlex().
+		SetDirection(tview.FlexRow).
+		AddItem(a.statusBar, 0, 1, false)
+
+	rightPanel := tview.NewFlex().
+		SetDirection(tview.FlexRow).
+		AddItem(a.songTable, 0, 1, true)
+
+	mainLayout := tview.NewFlex().
+		SetDirection(tview.FlexColumn).
+		AddItem(leftPanel, 0, 1, false).
+		AddItem(rightPanel, 0, 2, true)
+
 	a.rootFlex = tview.NewFlex().
 		SetDirection(tview.FlexRow).
-		AddItem(a.songTable, 0, 1, true).
-		AddItem(a.progressBar, 1, 0, false).
-		AddItem(a.statusBar, 7, 1, false)
+		AddItem(mainLayout, 0, 1, true).
+		AddItem(a.progressBar, 3, 0, false)
 
 	a.application.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-		if event.Key() == tcell.KeyRune && event.Rune() == ' ' {
-			if a.isPlaying {
-				a.mpvInstance.Pause()
-				a.isPlaying = false
-				info := fmt.Sprintf("[yellow]Paused: %s - %s\n"+
-					"[yellow]Album: [white]%s\n"+
-					"[yellow]Bitrate: [white]%d kbps\n"+
-					"[yellow]Size: [white]%.2f MB",
-					a.currentSong.Title,
-					a.currentSong.Artist,
-					a.currentSong.Album,
-					a.currentSong.BitRate,
-					float64(a.currentSong.Size)/1024/1024)
-				a.statusBar.SetText(info)
-			} else {
-				a.mpvInstance.Pause()
-				a.isPlaying = true
-				info := fmt.Sprintf("[green]Playing: %s - %s\n"+
-					"[yellow]Album: [white]%s\n"+
-					"[yellow]Bitrate: [white]%d kbps\n"+
-					"[yellow]Size: [white]%.2f MB",
-					a.currentSong.Title,
-					a.currentSong.Artist,
-					a.currentSong.Album,
-					a.currentSong.BitRate,
-					float64(a.currentSong.Size)/1024/1024)
-				a.statusBar.SetText(info)
+		if event.Key() == tcell.KeyRune {
+			switch event.Rune() {
+			case ' ':
+				if a.mpvInstance == nil || a.mpvInstance.Mpv == nil {
+					return nil
+				}
+
+				go func() {
+					defer func() {
+						if r := recover(); r != nil {
+
+						}
+					}()
+
+					if a.isPlaying {
+						a.mpvInstance.Pause()
+						a.isPlaying = false
+						if a.currentSong != nil {
+							info := fmt.Sprintf(`
+[white]Current %d:
+[yellow]%s [darkgray](PAUSED)
+
+[darkgray][play] %s
+[darkgray][source] %.1f MB
+[darkgray][favourite]
+
+[gray]%s - %s
+[gray]%s
+[darkgray]▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░░░░░░ --%%`,
+								a.currentSongIndex+1,
+								a.currentSong.Title,
+								formatDuration(a.currentSong.Duration),
+								float64(a.currentSong.Size)/1024/1024,
+								a.currentSong.Artist,
+								a.currentSong.Album,
+								a.currentSong.Album)
+
+							a.application.QueueUpdateDraw(func() {
+								if a.statusBar != nil {
+									a.statusBar.SetText(info)
+								}
+							})
+						}
+					} else {
+						a.mpvInstance.Pause()
+						a.isPlaying = true
+						if a.currentSong != nil {
+							info := fmt.Sprintf(`
+[white]Current %d:
+[lightgreen]%s
+
+[darkgray][play] %s
+[darkgray][source] %.1f MB
+[darkgray][favourite]
+
+[gray]%s - %s
+[gray]%s
+[lightgreen]▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░░░░░░ --%%`,
+								a.currentSongIndex+1,
+								a.currentSong.Title,
+								formatDuration(a.currentSong.Duration),
+								float64(a.currentSong.Size)/1024/1024,
+								a.currentSong.Artist,
+								a.currentSong.Album,
+								a.currentSong.Album)
+
+							a.application.QueueUpdateDraw(func() {
+								if a.statusBar != nil {
+									a.statusBar.SetText(info)
+								}
+							})
+						}
+					}
+				}()
+				return nil
+			case 'n', 'N':
+				a.playNextSong()
+				return nil
+			case 'p', 'P':
+				a.playPreviousSong()
+				return nil
 			}
-			return nil
 		}
 
 		switch event.Key() {
-		case tcell.KeyEsc, tcell.KeyENQ:
+		case tcell.KeyEsc, tcell.KeyCtrlC:
+			log.Println("user request exit program")
+
+			if a.mpvInstance != nil && a.mpvInstance.Mpv != nil {
+				a.mpvInstance.Command([]string{"quit"})
+			}
+
 			a.application.Stop()
+
+			go func() {
+				time.Sleep(1 * time.Second)
+				os.Exit(0)
+			}()
+			return nil
+		case tcell.KeyRight:
+			a.playNextSong()
+			return nil
+		case tcell.KeyLeft:
+			a.playPreviousSong()
+			return nil
 		}
 		return event
 	})
 	a.application.SetRoot(a.rootFlex, true)
 
+	welcomeMsg := fmt.Sprintf(`
+[white]Current:
+[lightgreen]Welcome to NaviCLI
+
+[darkgray][play] Ready
+[darkgray][source] Navidrome
+[darkgray][favourite]
+
+[gray]Press SPACE to play/pause
+[gray]Press N/P or ←/→ for prev/next
+[gray]Press ESC to exit
+[gray]Select a track to start
+
+[darkgray][red]func[darkgray] [green]navicli[darkgray]([yellow]task[darkgray] [lightblue]string[darkgray]) [lightblue]string[darkgray] {
+[darkgray]    [red]return[darkgray] "^A series of mixes for listening while" [red]+[darkgray] task [red]+[darkgray] \
+[darkgray]         "to focus the brain and i nspire the mind.[darkgray]"
+[darkgray]}
+[darkgray]
+[darkgray]task := "[yellow]programming[darkgray]"
+
+[darkgray]// %d songs
+[darkgray]// Written by github.com/yhkl-dev
+[darkgray]// Ready to play
+[darkgray]// Auto-play next enabled`, len(a.totalSongs))
+	a.statusBar.SetText(welcomeMsg)
 }
 
 func (a *Application) renderSongTable() {
@@ -246,22 +662,43 @@ func (a *Application) renderSongTable() {
 		a.songTable.RemoveRow(i)
 	}
 	pageData := a.getCurrentPageData()
-	cells := make([]*tview.TableCell, 0, len(pageData)*5)
+
 	for i, song := range pageData {
-		cells = append(cells,
-			tview.NewTableCell(fmt.Sprintf("%d", i+1)).SetAlign(tview.AlignRight),
-			tview.NewTableCell(song.Title).SetExpansion(1).SetMaxWidth(40),
-			tview.NewTableCell(song.Artist).SetMaxWidth(40),
-			tview.NewTableCell(song.Album).SetMaxWidth(40),
-			tview.NewTableCell(formatDuration(song.Duration)).SetAlign(tview.AlignRight).SetMaxWidth(40),
-		)
+		row := i + 1
+
+		rowStyle := tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorDefault)
+
+		trackCell := tview.NewTableCell(fmt.Sprintf("%d:", row)).
+			SetStyle(rowStyle.Foreground(tcell.ColorLightGreen)).
+			SetAlign(tview.AlignRight)
+
+		titleCell := tview.NewTableCell(song.Title).
+			SetStyle(rowStyle.Foreground(tcell.ColorWhite)).
+			SetExpansion(1)
+
+		artistCell := tview.NewTableCell(song.Artist).
+			SetStyle(rowStyle.Foreground(tcell.ColorGray)).
+			SetMaxWidth(25)
+
+		albumCell := tview.NewTableCell(song.Album).
+			SetStyle(rowStyle.Foreground(tcell.ColorGray)).
+			SetMaxWidth(25)
+
+		durationCell := tview.NewTableCell(formatDuration(song.Duration)).
+			SetStyle(rowStyle.Foreground(tcell.ColorGray)).
+			SetAlign(tview.AlignRight)
+
+		a.songTable.SetCell(row, 0, trackCell)
+		a.songTable.SetCell(row, 1, titleCell)
+		a.songTable.SetCell(row, 2, artistCell)
+		a.songTable.SetCell(row, 3, albumCell)
+		a.songTable.SetCell(row, 4, durationCell)
 	}
 
-	for i := range pageData {
-		for col := range 5 {
-			a.songTable.SetCell(i+1, col, cells[i*5+col])
-		}
-	}
+	a.songTable.SetSelectedStyle(tcell.StyleDefault.
+		Background(tcell.ColorDarkGreen).
+		Foreground(tcell.ColorWhite))
+
 	a.songTable.ScrollToBeginning()
 }
 
@@ -291,10 +728,15 @@ func eventListener(ctx context.Context, m *mpv.Mpv) chan *mpv.Event {
 				return
 			default:
 				e := m.WaitEvent(1)
-				if e != nil && e.Event_Id == mpv.EVENT_END_FILE {
-					// TODO need to play next song
+				if e == nil {
+					time.Sleep(10 * time.Millisecond)
+					continue
 				}
-				c <- e
+				select {
+				case c <- e:
+				case <-ctx.Done():
+					return
+				}
 			}
 		}
 	}()
@@ -313,13 +755,16 @@ func ViperInit() {
 	viper.AddConfigPath("$HOME/.config/")
 	viper.AddConfigPath(".")
 
+	viper.SetDefault("keys.search", "/")
+
 	if err := viper.ReadInConfig(); err != nil {
-		log.Fatal("fatal error config file: %w \n", err)
+		os.Exit(1)
 	}
 
 	for _, key := range required {
 		if !viper.IsSet(key) {
-			log.Fatalf("missing required config: %s", key)
+
+			os.Exit(1)
 		}
 	}
 }
@@ -353,21 +798,82 @@ func main() {
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		<-sigChan
+		log.Println("receive exit signal, cleaning resource...")
+
+		if app.mpvInstance != nil && app.mpvInstance.Mpv != nil {
+			app.mpvInstance.Command([]string{"quit"})
+			app.mpvInstance.TerminateDestroy()
+		}
+
 		cancel()
 		app.application.Stop()
+
+		go func() {
+			time.Sleep(2 * time.Second)
+			log.Println("force quit.")
+			os.Exit(0)
+		}()
 	}()
+
 	app.setupPagination()
-	app.createHomepage()
+
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+
+			}
+		}()
+
+		for {
+			select {
+			case event, ok := <-app.mpvInstance.EventChannel:
+				if !ok {
+					return
+				}
+				if event != nil && event.Event_Id == mpv.EVENT_END_FILE {
+					app.application.QueueUpdateDraw(func() {
+						app.playNextSong()
+					})
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
 	go app.updateProgressBar()
 	go func() {
 		if err := app.loadMusic(); err != nil {
 			app.application.QueueUpdateDraw(func() {
-				app.statusBar.SetText("[red]加载失败: " + err.Error())
+				app.statusBar.SetText("[red]load music failed: " + err.Error())
 			})
 		}
 	}()
+	app.createHomepage()
 
-	if err := app.application.Run(); err != nil {
-		log.Fatal(err)
+	log.Println("start navicli...")
+	err = app.application.Run()
+
+	log.Println("program exiting, clear resource...")
+	cancel()
+
+	if app.mpvInstance != nil && app.mpvInstance.Mpv != nil {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+
+				}
+			}()
+			app.mpvInstance.Command([]string{"quit"})
+			app.mpvInstance.TerminateDestroy()
+		}()
 	}
+
+	if err != nil {
+		fmt.Println(err.Error())
+		os.Exit(1)
+	}
+
+	log.Println("program exit.")
+	os.Exit(0)
 }
