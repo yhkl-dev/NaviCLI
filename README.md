@@ -5,6 +5,7 @@
 
 A lightweight command line music player for Navidrome, written in Go.
 
+![NaviCLI Screenshot](./screenshot/image.png)
 ## Background
 > I found that Feishin client is very slow on MacOS.
 > To be honest, we don't need a GUI for listening to music.
@@ -12,6 +13,7 @@ A lightweight command line music player for Navidrome, written in Go.
 > Hope you guys like it.
 
 ## Features
+
 - 🚀 Fast and lightweight
 - 🎨 Terminal-based UI with colors
 - ⏯ Play/pause/skip controls
