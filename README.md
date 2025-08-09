@@ -86,4 +86,3 @@ PRs are welcome! Please open an issue first to discuss what you'd like to change
 
 ## License
 [MIT](LICENSE)
-```
