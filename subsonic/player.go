@@ -13,7 +13,6 @@ func (c *Client) GetPlaylists() ([]Song, error) {
 		"format": "json",
 	})
 	requestUrl := fmt.Sprintf("%s/rest/getRandomSongs?%s", c.BaseURL, params.Encode())
-	fmt.Println(requestUrl)
 	req, err := http.NewRequest("GET", requestUrl, nil)
 	if err != nil {
 		return nil, fmt.Errorf("创建请求失败: %w", err)
