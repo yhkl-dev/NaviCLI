@@ -5,8 +5,11 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"os/signal"
 	"reflect"
+	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -25,6 +28,14 @@ func formatDuration(seconds int) string {
 	return fmt.Sprintf("%02d:%02d", minutes, seconds)
 }
 
+type PlayerState struct {
+	currentSong      *subsonic.Song
+	currentSongIndex int
+	isPlaying        bool
+	isLoading        bool
+	mux              sync.RWMutex
+}
+
 type Application struct {
 	application    *tview.Application
 	subsonicClient *subsonic.Client
@@ -39,19 +50,86 @@ type Application struct {
 	statusBar   *tview.TextView
 	progressBar *tview.TextView
 	statsBar    *tview.TextView
-	currentSong *subsonic.Song
-	isPlaying   bool
-	isLoading   bool
-	loadingMux  sync.Mutex
 
-	currentSongIndex int
+	state *PlayerState
+}
+
+func (s *PlayerState) GetState() (song *subsonic.Song, index int, playing bool, loading bool) {
+	s.mux.RLock()
+	defer s.mux.RUnlock()
+	return s.currentSong, s.currentSongIndex, s.isPlaying, s.isLoading
+}
+
+func (s *PlayerState) SetLoading(loading bool) {
+	s.mux.Lock()
+	defer s.mux.Unlock()
+	s.isLoading = loading
+}
+
+func (s *PlayerState) SetPlaying(playing bool) {
+	s.mux.Lock()
+	defer s.mux.Unlock()
+	s.isPlaying = playing
+}
+
+func (s *PlayerState) SetCurrentSong(song *subsonic.Song, index int) {
+	s.mux.Lock()
+	defer s.mux.Unlock()
+	s.currentSong = song
+	s.currentSongIndex = index
 }
 
 func (a *Application) setupPagination() {
 	a.pageSize = 500
 	a.currentPage = 1
-	a.currentSongIndex = -1
-	a.isLoading = false
+	a.state = &PlayerState{
+		currentSongIndex: -1,
+		isLoading:        false,
+		isPlaying:        false,
+	}
+}
+
+func (a *Application) createStatusInfo(track subsonic.Song, index int, status, progressBar string) string {
+	return fmt.Sprintf(`
+[white]Current %d:
+%s
+
+[darkgray][play] %s
+[darkgray][source] %.1f MB
+[darkgray][favourite]
+
+[gray]%s - %s
+[gray]%s
+%s`,
+		index+1, status, formatDuration(track.Duration),
+		float64(track.Size)/1024/1024, track.Artist, track.Album, track.Album, progressBar)
+}
+
+func (a *Application) updateStatus(info string) {
+	a.application.QueueUpdateDraw(func() {
+		if a.statusBar != nil {
+			a.statusBar.SetText(info)
+		}
+	})
+}
+
+func (a *Application) getPlayURL(trackID string) (string, bool) {
+	done := make(chan string, 1)
+	go func() {
+		defer func() {
+			if recover() != nil {
+				done <- ""
+			}
+		}()
+		done <- a.subsonicClient.GetPlayURL(trackID)
+	}()
+
+	select {
+	case url := <-done:
+		return url, url != ""
+	case <-time.After(10 * time.Second):
+		return "", false
+	}
 }
 
 func (a *Application) playSongAtIndex(index int) {
@@ -59,152 +137,55 @@ func (a *Application) playSongAtIndex(index int) {
 		return
 	}
 
-	a.loadingMux.Lock()
-	if a.isLoading {
-		a.loadingMux.Unlock()
+	_, _, _, loading := a.state.GetState()
+	if loading {
 		return
 	}
-	a.isLoading = true
-	a.currentSongIndex = index
+
 	currentTrack := a.totalSongs[index]
-	a.currentSong = &currentTrack
-	a.isPlaying = false
-	a.loadingMux.Unlock()
+	a.state.SetLoading(true)
+	a.state.SetCurrentSong(&currentTrack, index)
+	a.state.SetPlaying(false)
 
+	loadingStatus := fmt.Sprintf("[yellow]%s [darkgray](Loading...)", currentTrack.Title)
 	loadingBar := "[yellow]▓▓▓[darkgray]░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ Loading..."
-	info := fmt.Sprintf(`
-[white]Current %d:
-[yellow]%s [darkgray](Loading...)
-
-[darkgray][play] %s
-[darkgray][source] %.1f MB
-[darkgray][favourite]
-
-[gray]%s - %s
-[gray]%s
-%s`,
-		index+1,
-		currentTrack.Title,
-		formatDuration(currentTrack.Duration),
-		float64(currentTrack.Size)/1024/1024,
-		currentTrack.Artist,
-		currentTrack.Album,
-		currentTrack.Album,
-		loadingBar)
-
-	a.application.QueueUpdateDraw(func() {
-		if a.statusBar != nil {
-			a.statusBar.SetText(info)
-		}
-	})
+	a.updateStatus(a.createStatusInfo(currentTrack, index, loadingStatus, loadingBar))
 
 	go func() {
+		defer a.state.SetLoading(false)
 		defer func() {
-			a.loadingMux.Lock()
-			a.isLoading = false
-			a.loadingMux.Unlock()
-
 			if r := recover(); r != nil {
-
-				a.isPlaying = false
-				a.application.QueueUpdateDraw(func() {
-					if a.statusBar != nil {
-						failedInfo := fmt.Sprintf(`
-[white]Current %d:
-[red]%s [darkgray](Failed)
-
-[darkgray][play] %s
-[darkgray][source] %.1f MB
-[darkgray][favourite]
-
-[gray]%s - %s
-[gray]%s
-[red]Play Failed`,
-							index+1,
-							currentTrack.Title,
-							formatDuration(currentTrack.Duration),
-							float64(currentTrack.Size)/1024/1024,
-							currentTrack.Artist,
-							currentTrack.Album,
-							currentTrack.Album)
-						a.statusBar.SetText(failedInfo)
-					}
-				})
+				a.state.SetPlaying(false)
+				failedStatus := fmt.Sprintf("[red]%s [darkgray](Failed)", currentTrack.Title)
+				a.updateStatus(a.createStatusInfo(currentTrack, index, failedStatus, "[red]Play Failed"))
 			}
 		}()
 
-		done := make(chan string, 1)
-		go func() {
-			defer func() {
-				if r := recover(); r != nil {
-
-					done <- ""
-				}
-			}()
-			url := a.subsonicClient.GetPlayURL(currentTrack.ID)
-			done <- url
-		}()
-
-		var playURL string
-		select {
-		case playURL = <-done:
-			if playURL == "" {
-
-				return
-			}
-		case <-time.After(10 * time.Second):
-
+		playURL, ok := a.getPlayURL(currentTrack.ID)
+		if !ok {
 			return
 		}
 
-		if a.mpvInstance != nil {
-			a.mpvInstance.Queue = []mpvplayer.QueueItem{{
-				Id:       currentTrack.ID,
-				Uri:      playURL,
-				Title:    currentTrack.Title,
-				Artist:   currentTrack.Artist,
-				Duration: currentTrack.Duration,
-			}}
+		if a.mpvInstance == nil {
+			return
+		}
 
-			if a.mpvInstance.Mpv != nil {
-				a.mpvInstance.Stop()
-				time.Sleep(50 * time.Millisecond)
-			}
+		a.mpvInstance.Queue = []mpvplayer.QueueItem{{
+			Id: currentTrack.ID, Uri: playURL, Title: currentTrack.Title,
+			Artist: currentTrack.Artist, Duration: currentTrack.Duration,
+		}}
 
-			if a.mpvInstance.Mpv != nil {
-				a.mpvInstance.Play(playURL)
+		if a.mpvInstance.Mpv != nil {
+			a.mpvInstance.Stop()
+			time.Sleep(50 * time.Millisecond)
+			a.mpvInstance.Play(playURL)
+			a.state.SetPlaying(true)
 
-				a.isPlaying = true
+			playingStatus := fmt.Sprintf("[lightgreen]%s", currentTrack.Title)
+			playingBar := "[lightgreen]▓[darkgray]░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ 0.0%"
+			a.updateStatus(a.createStatusInfo(currentTrack, index, playingStatus, playingBar))
 
-				playingBar := "[lightgreen]▓[darkgray]░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ 0.0%"
-				playingInfo := fmt.Sprintf(`
-[white]Current %d:
-[lightgreen]%s
-
-[darkgray][play] %s
-[darkgray][source] %.1f MB
-[darkgray][favourite]
-
-[gray]%s - %s
-[gray]%s
-%s`,
-					index+1,
-					currentTrack.Title,
-					formatDuration(currentTrack.Duration),
-					float64(currentTrack.Size)/1024/1024,
-					currentTrack.Artist,
-					currentTrack.Album,
-					currentTrack.Album,
-					playingBar)
-
-				a.application.QueueUpdateDraw(func() {
-					if a.statusBar != nil {
-						a.statusBar.SetText(playingInfo)
-					}
-				})
-
-				time.Sleep(500 * time.Millisecond)
-			}
+			time.Sleep(500 * time.Millisecond)
 		}
 	}()
 }
@@ -214,16 +195,12 @@ func (a *Application) playNextSong() {
 		return
 	}
 
-	a.loadingMux.Lock()
-	isCurrentlyLoading := a.isLoading
-	a.loadingMux.Unlock()
-
-	if isCurrentlyLoading {
-
+	_, currentIndex, _, loading := a.state.GetState()
+	if loading {
 		return
 	}
 
-	nextIndex := a.currentSongIndex + 1
+	nextIndex := currentIndex + 1
 	if nextIndex >= len(a.totalSongs) {
 		nextIndex = 0
 	}
@@ -236,16 +213,12 @@ func (a *Application) playPreviousSong() {
 		return
 	}
 
-	a.loadingMux.Lock()
-	isCurrentlyLoading := a.isLoading
-	a.loadingMux.Unlock()
-
-	if isCurrentlyLoading {
-
+	_, currentIndex, _, loading := a.state.GetState()
+	if loading {
 		return
 	}
 
-	prevIndex := a.currentSongIndex - 1
+	prevIndex := currentIndex - 1
 	if prevIndex < 0 {
 		prevIndex = len(a.totalSongs) - 1
 	}
@@ -259,6 +232,169 @@ func (a *Application) getCurrentPageData() []subsonic.Song {
 	return a.totalSongs[start:end]
 }
 
+func (a *Application) getTerminalWidth() int {
+	cmd := exec.Command("tput", "cols")
+	output, err := cmd.Output()
+	if err != nil {
+		return 80
+	}
+	width, err := strconv.Atoi(strings.TrimSpace(string(output)))
+	if err != nil || width <= 0 {
+		return 80
+	}
+	return width
+}
+
+func (a *Application) setupTableHeaders() {
+	headerStyle := tcell.StyleDefault.Foreground(tcell.ColorGray).Attributes(tcell.AttrBold)
+	
+	for col := 0; col < 5; col++ {
+		a.songTable.SetCell(0, col, tview.NewTableCell("").SetStyle(headerStyle))
+	}
+}
+
+func (a *Application) getPlaybackProgress() (currentPos, totalDuration float64, err error) {
+	done := make(chan struct{})
+	var hasError bool
+
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				hasError = true
+			}
+			close(done)
+		}()
+
+		pos, posErr := a.mpvInstance.GetProperty("time-pos", mpv.FORMAT_DOUBLE)
+		if posErr != nil {
+			hasError = true
+			return
+		}
+		duration, durErr := a.mpvInstance.GetProperty("duration", mpv.FORMAT_DOUBLE)
+		if durErr != nil {
+			hasError = true
+			return
+		}
+		currentPos = pos.(float64)
+		totalDuration = duration.(float64)
+	}()
+
+	select {
+	case <-done:
+		if hasError {
+			return 0, 0, fmt.Errorf("failed to get playback progress")
+		}
+		return currentPos, totalDuration, nil
+	case <-time.After(200 * time.Millisecond):
+		return 0, 0, fmt.Errorf("timeout getting playback progress")
+	}
+}
+
+func (a *Application) getVolume() (float64, error) {
+	done := make(chan float64, 1)
+	go func() {
+		defer func() {
+			if recover() != nil {
+				done <- -1
+			}
+		}()
+		if vol, err := a.mpvInstance.GetVolume(); err == nil {
+			done <- vol
+		} else {
+			done <- -1
+		}
+	}()
+
+	select {
+	case vol := <-done:
+		if vol < 0 {
+			return 0, fmt.Errorf("failed to get volume")
+		}
+		return vol, nil
+	case <-time.After(100 * time.Millisecond):
+		return 0, fmt.Errorf("timeout getting volume")
+	}
+}
+
+func (a *Application) createProgressBar(progress float64) string {
+	const progressBarWidth = 30
+	filledWidth := int(progress * float64(progressBarWidth))
+	var bar string
+
+	for i := range progressBarWidth {
+		if i < filledWidth {
+			bar += "[lightgreen]▓"
+		} else {
+			bar += "[darkgray]░"
+		}
+	}
+	return bar + fmt.Sprintf("[white] %.1f%%", progress*100)
+}
+
+func (a *Application) updateIdleDisplay() {
+	a.application.QueueUpdateDraw(func() {
+		if a.progressBar != nil {
+			idleDisplay := `
+[darkgray][about] [darkgray][credits] [darkgray][rss.xml]
+[darkgray][patreon] [darkgray][podcasts.apple]
+[darkgray][folder.jpg] [darkgray][enterprise mode]
+[darkgray][invert] [darkgray][fullscreen]`
+			a.progressBar.SetText(idleDisplay)
+		}
+	})
+}
+
+func (a *Application) updatePausedDisplay(song *subsonic.Song, index int) {
+	a.application.QueueUpdateDraw(func() {
+		if a.progressBar != nil && a.statusBar != nil {
+			volumeText := "??"
+			if vol, err := a.getVolume(); err == nil {
+				volumeText = fmt.Sprintf("%.0f%%", vol)
+			}
+			
+			pausedDisplay := fmt.Sprintf(`
+[darkgray]00:00:00 [darkgray][v-] [white]%s [darkgray][v+] [darkgray][random]`, volumeText)
+			a.progressBar.SetText(pausedDisplay)
+
+			pausedStatus := fmt.Sprintf("[yellow]%s [darkgray](PAUSED)", song.Title)
+			progressBar := "[darkgray]▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░░░░░░ 0%"
+			a.statusBar.SetText(a.createStatusInfo(*song, index, pausedStatus, progressBar))
+		}
+	})
+}
+
+func (a *Application) updatePlayingDisplay(song *subsonic.Song, index int, currentPos, totalDuration float64) {
+	currentTime := formatDuration(int(currentPos))
+	totalTime := formatDuration(int(totalDuration))
+	
+	progress := currentPos / totalDuration
+	if progress > 1 {
+		progress = 1
+	} else if progress < 0 {
+		progress = 0
+	}
+
+	volumeText := "??"
+	if vol, err := a.getVolume(); err == nil {
+		volumeText = fmt.Sprintf("%.0f%%", vol)
+	}
+
+	progressText := fmt.Sprintf(`
+[darkgray]%s/%s [darkgray][v-] [white]%s [darkgray][v+] [darkgray][random]`, currentTime, totalTime, volumeText)
+	
+	progressBar := a.createProgressBar(progress)
+	playingStatus := fmt.Sprintf("[lightgreen]%s", song.Title)
+
+	a.application.QueueUpdateDraw(func() {
+		if a.progressBar != nil {
+			a.progressBar.SetText(progressText)
+		}
+		if a.statusBar != nil {
+			a.statusBar.SetText(a.createStatusInfo(*song, index, playingStatus, progressBar))
+		}
+	})
+}
+
 func (a *Application) updateProgressBar() {
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
@@ -270,70 +406,26 @@ func (a *Application) updateProgressBar() {
 				return
 			}
 
-			a.loadingMux.Lock()
-			isCurrentlyLoading := a.isLoading
-			currentSongPtr := a.currentSong
-			currentIndex := a.currentSongIndex
-			isCurrentlyPlaying := a.isPlaying
-			a.loadingMux.Unlock()
-
-			if isCurrentlyLoading {
-
+			currentSong, currentIndex, isPlaying, isLoading := a.state.GetState()
+			if isLoading {
 				continue
 			}
 
 			if a.mpvInstance.Mpv == nil {
-				a.application.QueueUpdateDraw(func() {
-					if a.progressBar != nil {
-						idleDisplay := `
-[darkgray][about] [darkgray][credits] [darkgray][rss.xml]
-[darkgray][patreon] [darkgray][podcasts.apple]
-[darkgray][folder.jpg] [darkgray][enterprise mode]
-[darkgray][invert] [darkgray][fullscreen]`
-						a.progressBar.SetText(idleDisplay)
-					}
-				})
+				a.updateIdleDisplay()
 				continue
 			}
 
-			if !isCurrentlyPlaying {
-				if currentSongPtr != nil {
-					a.application.QueueUpdateDraw(func() {
-						if a.progressBar != nil && a.statusBar != nil {
-							pausedDisplay := `
-[darkgray]00:00:00 [darkgray][v-] [darkgray]100% [darkgray][v+] [darkgray][random]`
-							a.progressBar.SetText(pausedDisplay)
-
-							progressBar := "[darkgray]▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░░░░░░ 0%"
-							statusInfo := fmt.Sprintf(`
-[white]Episode %d:
-[yellow]%s [darkgray](PAUSED)
-
-[darkgray][play] %s
-[darkgray][source] %.1f MB
-[darkgray][favourite]
-
-[gray]%s - %s
-[gray]%s
-%s`,
-								currentIndex+1,
-								currentSongPtr.Title,
-								formatDuration(currentSongPtr.Duration),
-								float64(currentSongPtr.Size)/1024/1024,
-								currentSongPtr.Artist,
-								currentSongPtr.Album,
-								currentSongPtr.Album,
-								progressBar)
-							a.statusBar.SetText(statusInfo)
-						}
-					})
+			if !isPlaying {
+				if currentSong != nil {
+					a.updatePausedDisplay(currentSong, currentIndex)
 				}
 				continue
 			}
 
 			go func() {
 				defer func() {
-					if r := recover(); r != nil {
+					if recover() != nil {
 					}
 				}()
 
@@ -341,104 +433,14 @@ func (a *Application) updateProgressBar() {
 					return
 				}
 
-				done := make(chan struct{})
-				var currentPos, totalDuration float64
-				var hasError bool
-
-				go func() {
-					defer func() {
-						if r := recover(); r != nil {
-							hasError = true
-						}
-						close(done)
-					}()
-
-					pos, err := a.mpvInstance.GetProperty("time-pos", mpv.FORMAT_DOUBLE)
-					if err != nil {
-						hasError = true
-						return
-					}
-					duration, err := a.mpvInstance.GetProperty("duration", mpv.FORMAT_DOUBLE)
-					if err != nil {
-						hasError = true
-						return
-					}
-					currentPos = pos.(float64)
-					totalDuration = duration.(float64)
-				}()
-
-				select {
-				case <-done:
-					if hasError {
-						return
-					}
-				case <-time.After(200 * time.Millisecond):
+				currentPos, totalDuration, err := a.getPlaybackProgress()
+				if err != nil || totalDuration <= 0 || currentPos < 0 {
 					return
 				}
 
-				if totalDuration <= 0 || currentPos < 0 {
-					return
-				}
-
-				currentTime := formatDuration(int(currentPos))
-				totalTime := formatDuration(int(totalDuration))
-
-				progress := currentPos / totalDuration
-				if progress > 1 {
-					progress = 1
-				} else if progress < 0 {
-					progress = 0
-				}
-
-				progressBarWidth := 30
-				filledWidth := int(progress * float64(progressBarWidth))
-				progressBar := ""
-
-				for i := range progressBarWidth {
-					if i < filledWidth {
-						progressBar += "[lightgreen]▓"
-					} else {
-						progressBar += "[darkgray]░"
-					}
-				}
-				progressBar += fmt.Sprintf("[white] %.1f%%", progress*100)
-
-				progressText := fmt.Sprintf(`
-[darkgray]%s/%s [darkgray][random]`,
-					currentTime, totalTime)
-
-				select {
-				case <-time.After(10 * time.Millisecond):
-					return
-				default:
-					a.application.QueueUpdateDraw(func() {
-						if a.progressBar != nil {
-							a.progressBar.SetText(progressText)
-						}
-
-						if currentSongPtr != nil && a.statusBar != nil {
-							statusInfo := fmt.Sprintf(`
-[white]Current %d:
-[lightgreen]%s
-
-[darkgray][play] %s
-[darkgray][source] %.1f MB
-[darkgray][favourite]
-
-[gray]%s - %s
-[gray]%s
-%s`,
-								currentIndex+1,
-								currentSongPtr.Title,
-								formatDuration(currentSongPtr.Duration),
-								float64(currentSongPtr.Size)/1024/1024,
-								currentSongPtr.Artist,
-								currentSongPtr.Album,
-								currentSongPtr.Album,
-								progressBar)
-							a.statusBar.SetText(statusInfo)
-						}
-					})
+				song, index, _, _ := a.state.GetState()
+				if song != nil {
+					a.updatePlayingDisplay(song, index, currentPos, totalDuration)
 				}
 			}()
 
@@ -474,27 +476,12 @@ func (a *Application) createHomepage() {
 
 	a.songTable.SetBorder(false)
 
-	headerStyle := tcell.StyleDefault.Foreground(tcell.ColorGray).Attributes(tcell.AttrBold)
-
-	a.songTable.SetCell(0, 0, tview.NewTableCell("").
-		SetStyle(headerStyle))
-	a.songTable.SetCell(0, 1, tview.NewTableCell("").
-		SetStyle(headerStyle))
-	a.songTable.SetCell(0, 2, tview.NewTableCell("").
-		SetStyle(headerStyle))
-	a.songTable.SetCell(0, 3, tview.NewTableCell("").
-		SetStyle(headerStyle))
-	a.songTable.SetCell(0, 4, tview.NewTableCell("").
-		SetStyle(headerStyle))
+	a.setupTableHeaders()
 
 	a.songTable.SetSelectedFunc(func(row, column int) {
 		if row > 0 && row-1 < len(a.totalSongs) {
-			a.loadingMux.Lock()
-			isCurrentlyLoading := a.isLoading
-			a.loadingMux.Unlock()
-
-			if isCurrentlyLoading {
-
+			_, _, _, loading := a.state.GetState()
+			if loading {
 				return
 			}
 			go a.playSongAtIndex(row - 1)
@@ -529,70 +516,30 @@ func (a *Application) createHomepage() {
 
 				go func() {
 					defer func() {
-						if r := recover(); r != nil {
-
+						if recover() != nil {
 						}
 					}()
 
-					if a.isPlaying {
-						a.mpvInstance.Pause()
-						a.isPlaying = false
-						if a.currentSong != nil {
-							info := fmt.Sprintf(`
-[white]Current %d:
-[yellow]%s [darkgray](PAUSED)
-
-[darkgray][play] %s
-[darkgray][source] %.1f MB
-[darkgray][favourite]
-
-[gray]%s - %s
-[gray]%s
-[darkgray]▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░░░░░░ --%%`,
-								a.currentSongIndex+1,
-								a.currentSong.Title,
-								formatDuration(a.currentSong.Duration),
-								float64(a.currentSong.Size)/1024/1024,
-								a.currentSong.Artist,
-								a.currentSong.Album,
-								a.currentSong.Album)
-
-							a.application.QueueUpdateDraw(func() {
-								if a.statusBar != nil {
-									a.statusBar.SetText(info)
-								}
-							})
-						}
-					} else {
-						a.mpvInstance.Pause()
-						a.isPlaying = true
-						if a.currentSong != nil {
-							info := fmt.Sprintf(`
-[white]Current %d:
-[lightgreen]%s
-
-[darkgray][play] %s
-[darkgray][source] %.1f MB
-[darkgray][favourite]
-
-[gray]%s - %s
-[gray]%s
-[lightgreen]▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░░░░░░ --%%`,
-								a.currentSongIndex+1,
-								a.currentSong.Title,
-								formatDuration(a.currentSong.Duration),
-								float64(a.currentSong.Size)/1024/1024,
-								a.currentSong.Artist,
-								a.currentSong.Album,
-								a.currentSong.Album)
-
-							a.application.QueueUpdateDraw(func() {
-								if a.statusBar != nil {
-									a.statusBar.SetText(info)
-								}
-							})
-						}
+					currentSong, currentIndex, isPlaying, _ := a.state.GetState()
+					if currentSong == nil {
+						return
 					}
+
+					a.mpvInstance.Pause()
+					newPlayingState := !isPlaying
+					a.state.SetPlaying(newPlayingState)
+
+					var status, progressBar string
+					if newPlayingState {
+						status = fmt.Sprintf("[lightgreen]%s", currentSong.Title)
+						progressBar = "[lightgreen]▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░░░░░░ --%%"
+					} else {
+						status = fmt.Sprintf("[yellow]%s [darkgray](PAUSED)", currentSong.Title)
+						progressBar = "[darkgray]▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░░░░░░ --%%"
+					}
+
+					info := a.createStatusInfo(*currentSong, currentIndex, status, progressBar)
+					a.updateStatus(info)
 				}()
 				return nil
 			case 'n', 'N':
@@ -661,13 +608,14 @@ func (a *Application) renderSongTable() {
 	for i := a.songTable.GetRowCount() - 1; i > 0; i-- {
 		a.songTable.RemoveRow(i)
 	}
+	a.setupTableHeaders()
 	pageData := a.getCurrentPageData()
+	termWidth := a.getTerminalWidth()
 
 	for i, song := range pageData {
 		row := i + 1
-
 		rowStyle := tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorDefault)
-
+		
 		trackCell := tview.NewTableCell(fmt.Sprintf("%d:", row)).
 			SetStyle(rowStyle.Foreground(tcell.ColorLightGreen)).
 			SetAlign(tview.AlignRight)
@@ -676,23 +624,34 @@ func (a *Application) renderSongTable() {
 			SetStyle(rowStyle.Foreground(tcell.ColorWhite)).
 			SetExpansion(1)
 
-		artistCell := tview.NewTableCell(song.Artist).
-			SetStyle(rowStyle.Foreground(tcell.ColorGray)).
-			SetMaxWidth(25)
+		col := 0
+		a.songTable.SetCell(row, col, trackCell)
+		col++
+		a.songTable.SetCell(row, col, titleCell)
+		col++
 
-		albumCell := tview.NewTableCell(song.Album).
-			SetStyle(rowStyle.Foreground(tcell.ColorGray)).
-			SetMaxWidth(25)
+		if termWidth >= 50 {
+			durationCell := tview.NewTableCell(formatDuration(song.Duration)).
+				SetStyle(rowStyle.Foreground(tcell.ColorGray)).
+				SetAlign(tview.AlignRight)
+			a.songTable.SetCell(row, col, durationCell)
+			col++
+		}
 
-		durationCell := tview.NewTableCell(formatDuration(song.Duration)).
-			SetStyle(rowStyle.Foreground(tcell.ColorGray)).
-			SetAlign(tview.AlignRight)
+		if termWidth >= 60 {
+			artistCell := tview.NewTableCell(song.Artist).
+				SetStyle(rowStyle.Foreground(tcell.ColorGray)).
+				SetMaxWidth(15)
+			a.songTable.SetCell(row, col, artistCell)
+			col++
+		}
 
-		a.songTable.SetCell(row, 0, trackCell)
-		a.songTable.SetCell(row, 1, titleCell)
-		a.songTable.SetCell(row, 2, artistCell)
-		a.songTable.SetCell(row, 3, albumCell)
-		a.songTable.SetCell(row, 4, durationCell)
+		if termWidth >= 90 {
+			albumCell := tview.NewTableCell(song.Album).
+				SetStyle(rowStyle.Foreground(tcell.ColorGray)).
+				SetMaxWidth(15)
+			a.songTable.SetCell(row, col, albumCell)
+		}
 	}
 
 	a.songTable.SetSelectedStyle(tcell.StyleDefault.
@@ -849,6 +808,33 @@ func main() {
 			})
 		}
 	}()
+	
+	go func() {
+		lastWidth := 0
+		ticker := time.NewTicker(500 * time.Millisecond)
+		defer ticker.Stop()
+		
+		for {
+			select {
+			case <-ticker.C:
+				if app.application == nil {
+					return
+				}
+				currentWidth := app.getTerminalWidth()
+				if currentWidth != lastWidth && lastWidth != 0 {
+					app.application.QueueUpdateDraw(func() {
+						if len(app.totalSongs) > 0 {
+							app.renderSongTable()
+						}
+					})
+				}
+				lastWidth = currentWidth
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	
 	app.createHomepage()
 
 	log.Println("start navicli...")

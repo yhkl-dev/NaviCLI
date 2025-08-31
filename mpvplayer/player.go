@@ -36,6 +36,11 @@ func (m *Mpvplayer) GetDuration() (float64, error) {
 	return duration.(float64), err
 }
 
+func (m *Mpvplayer) GetVolume() (float64, error) {
+	volume, err := m.GetProperty("volume", mpv.FORMAT_DOUBLE)
+	return volume.(float64), err
+}
+
 func (m *Mpvplayer) Play(playURL string) {
 	m.Command([]string{"loadfile", playURL})
 }
