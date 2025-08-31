@@ -5,8 +5,11 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"os/signal"
 	"reflect"
+	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -229,6 +232,27 @@ func (a *Application) getCurrentPageData() []subsonic.Song {
 	return a.totalSongs[start:end]
 }
 
+func (a *Application) getTerminalWidth() int {
+	cmd := exec.Command("tput", "cols")
+	output, err := cmd.Output()
+	if err != nil {
+		return 80
+	}
+	width, err := strconv.Atoi(strings.TrimSpace(string(output)))
+	if err != nil || width <= 0 {
+		return 80
+	}
+	return width
+}
+
+func (a *Application) setupTableHeaders() {
+	headerStyle := tcell.StyleDefault.Foreground(tcell.ColorGray).Attributes(tcell.AttrBold)
+	
+	for col := 0; col < 5; col++ {
+		a.songTable.SetCell(0, col, tview.NewTableCell("").SetStyle(headerStyle))
+	}
+}
+
 func (a *Application) getPlaybackProgress() (currentPos, totalDuration float64, err error) {
 	done := make(chan struct{})
 	var hasError bool
@@ -266,6 +290,32 @@ func (a *Application) getPlaybackProgress() (currentPos, totalDuration float64, 
 	}
 }
 
+func (a *Application) getVolume() (float64, error) {
+	done := make(chan float64, 1)
+	go func() {
+		defer func() {
+			if recover() != nil {
+				done <- -1
+			}
+		}()
+		if vol, err := a.mpvInstance.GetVolume(); err == nil {
+			done <- vol
+		} else {
+			done <- -1
+		}
+	}()
+
+	select {
+	case vol := <-done:
+		if vol < 0 {
+			return 0, fmt.Errorf("failed to get volume")
+		}
+		return vol, nil
+	case <-time.After(100 * time.Millisecond):
+		return 0, fmt.Errorf("timeout getting volume")
+	}
+}
+
 func (a *Application) createProgressBar(progress float64) string {
 	const progressBarWidth = 30
 	filledWidth := int(progress * float64(progressBarWidth))
@@ -297,8 +347,13 @@ func (a *Application) updateIdleDisplay() {
 func (a *Application) updatePausedDisplay(song *subsonic.Song, index int) {
 	a.application.QueueUpdateDraw(func() {
 		if a.progressBar != nil && a.statusBar != nil {
-			pausedDisplay := `
-[darkgray]00:00:00 [darkgray][v-] [darkgray]100% [darkgray][v+] [darkgray][random]`
+			volumeText := "??"
+			if vol, err := a.getVolume(); err == nil {
+				volumeText = fmt.Sprintf("%.0f%%", vol)
+			}
+			
+			pausedDisplay := fmt.Sprintf(`
+[darkgray]00:00:00 [darkgray][v-] [white]%s [darkgray][v+] [darkgray][random]`, volumeText)
 			a.progressBar.SetText(pausedDisplay)
 
 			pausedStatus := fmt.Sprintf("[yellow]%s [darkgray](PAUSED)", song.Title)
@@ -319,8 +374,13 @@ func (a *Application) updatePlayingDisplay(song *subsonic.Song, index int, curre
 		progress = 0
 	}
 
+	volumeText := "??"
+	if vol, err := a.getVolume(); err == nil {
+		volumeText = fmt.Sprintf("%.0f%%", vol)
+	}
+
 	progressText := fmt.Sprintf(`
-[darkgray]%s/%s [darkgray][random]`, currentTime, totalTime)
+[darkgray]%s/%s [darkgray][v-] [white]%s [darkgray][v+] [darkgray][random]`, currentTime, totalTime, volumeText)
 	
 	progressBar := a.createProgressBar(progress)
 	playingStatus := fmt.Sprintf("[lightgreen]%s", song.Title)
@@ -416,18 +476,7 @@ func (a *Application) createHomepage() {
 
 	a.songTable.SetBorder(false)
 
-	headerStyle := tcell.StyleDefault.Foreground(tcell.ColorGray).Attributes(tcell.AttrBold)
-
-	a.songTable.SetCell(0, 0, tview.NewTableCell("").
-		SetStyle(headerStyle))
-	a.songTable.SetCell(0, 1, tview.NewTableCell("").
-		SetStyle(headerStyle))
-	a.songTable.SetCell(0, 2, tview.NewTableCell("").
-		SetStyle(headerStyle))
-	a.songTable.SetCell(0, 3, tview.NewTableCell("").
-		SetStyle(headerStyle))
-	a.songTable.SetCell(0, 4, tview.NewTableCell("").
-		SetStyle(headerStyle))
+	a.setupTableHeaders()
 
 	a.songTable.SetSelectedFunc(func(row, column int) {
 		if row > 0 && row-1 < len(a.totalSongs) {
@@ -559,13 +608,14 @@ func (a *Application) renderSongTable() {
 	for i := a.songTable.GetRowCount() - 1; i > 0; i-- {
 		a.songTable.RemoveRow(i)
 	}
+	a.setupTableHeaders()
 	pageData := a.getCurrentPageData()
+	termWidth := a.getTerminalWidth()
 
 	for i, song := range pageData {
 		row := i + 1
-
 		rowStyle := tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorDefault)
-
+		
 		trackCell := tview.NewTableCell(fmt.Sprintf("%d:", row)).
 			SetStyle(rowStyle.Foreground(tcell.ColorLightGreen)).
 			SetAlign(tview.AlignRight)
@@ -574,23 +624,34 @@ func (a *Application) renderSongTable() {
 			SetStyle(rowStyle.Foreground(tcell.ColorWhite)).
 			SetExpansion(1)
 
-		artistCell := tview.NewTableCell(song.Artist).
-			SetStyle(rowStyle.Foreground(tcell.ColorGray)).
-			SetMaxWidth(25)
+		col := 0
+		a.songTable.SetCell(row, col, trackCell)
+		col++
+		a.songTable.SetCell(row, col, titleCell)
+		col++
 
-		albumCell := tview.NewTableCell(song.Album).
-			SetStyle(rowStyle.Foreground(tcell.ColorGray)).
-			SetMaxWidth(25)
+		if termWidth >= 50 {
+			durationCell := tview.NewTableCell(formatDuration(song.Duration)).
+				SetStyle(rowStyle.Foreground(tcell.ColorGray)).
+				SetAlign(tview.AlignRight)
+			a.songTable.SetCell(row, col, durationCell)
+			col++
+		}
 
-		durationCell := tview.NewTableCell(formatDuration(song.Duration)).
-			SetStyle(rowStyle.Foreground(tcell.ColorGray)).
-			SetAlign(tview.AlignRight)
+		if termWidth >= 60 {
+			artistCell := tview.NewTableCell(song.Artist).
+				SetStyle(rowStyle.Foreground(tcell.ColorGray)).
+				SetMaxWidth(15)
+			a.songTable.SetCell(row, col, artistCell)
+			col++
+		}
 
-		a.songTable.SetCell(row, 0, trackCell)
-		a.songTable.SetCell(row, 1, titleCell)
-		a.songTable.SetCell(row, 2, artistCell)
-		a.songTable.SetCell(row, 3, albumCell)
-		a.songTable.SetCell(row, 4, durationCell)
+		if termWidth >= 90 {
+			albumCell := tview.NewTableCell(song.Album).
+				SetStyle(rowStyle.Foreground(tcell.ColorGray)).
+				SetMaxWidth(15)
+			a.songTable.SetCell(row, col, albumCell)
+		}
 	}
 
 	a.songTable.SetSelectedStyle(tcell.StyleDefault.
@@ -747,6 +808,33 @@ func main() {
 			})
 		}
 	}()
+	
+	go func() {
+		lastWidth := 0
+		ticker := time.NewTicker(500 * time.Millisecond)
+		defer ticker.Stop()
+		
+		for {
+			select {
+			case <-ticker.C:
+				if app.application == nil {
+					return
+				}
+				currentWidth := app.getTerminalWidth()
+				if currentWidth != lastWidth && lastWidth != 0 {
+					app.application.QueueUpdateDraw(func() {
+						if len(app.totalSongs) > 0 {
+							app.renderSongTable()
+						}
+					})
+				}
+				lastWidth = currentWidth
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	
 	app.createHomepage()
 
 	log.Println("start navicli...")
