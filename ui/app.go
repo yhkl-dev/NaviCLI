@@ -36,6 +36,9 @@ type App struct {
 	songTable   *tview.Table
 	statusBar   *tview.TextView
 	progressBar *tview.TextView
+	searchView  *SearchView
+	helpView    *HelpView
+	queueView   *QueueView
 }
 
 // NewApp creates a new TUI application with dependency injection

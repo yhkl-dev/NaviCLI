@@ -28,6 +28,11 @@ func (a *App) createHomepage() {
 		SetFixed(1, 0)
 	a.songTable.SetBorder(false)
 
+	// Initialize views
+	a.searchView = NewSearchView(a)
+	a.helpView = NewHelpView(a)
+	a.queueView = NewQueueView(a)
+
 	a.setupTableHeaders()
 	a.setupInputHandlers()
 
@@ -74,6 +79,25 @@ func (a *App) setupInputHandlers() {
 	})
 
 	a.tviewApp.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		// Handle modal views first
+		if a.searchView != nil && a.searchView.IsActive() {
+			return event // Let search view handle its own input
+		}
+		if a.helpView != nil && a.helpView.IsActive() {
+			if event.Key() == tcell.KeyEscape || event.Rune() == '?' {
+				a.helpView.Close()
+				return nil
+			}
+			return event
+		}
+		if a.queueView != nil && a.queueView.IsActive() {
+			if event.Key() == tcell.KeyEscape || event.Rune() == 'q' || event.Rune() == 'Q' {
+				a.queueView.Close()
+				return nil
+			}
+			return event
+		}
+
 		if event.Key() == tcell.KeyRune {
 			switch event.Rune() {
 			case ' ':
@@ -84,6 +108,15 @@ func (a *App) setupInputHandlers() {
 				return nil
 			case 'p', 'P':
 				a.playPreviousSong()
+				return nil
+			case '/':
+				a.showSearch()
+				return nil
+			case '?':
+				a.showHelp()
+				return nil
+			case 'q', 'Q':
+				a.showQueue()
 				return nil
 			}
 		}
@@ -316,4 +349,70 @@ func (a *App) updatePlayingDisplay(song *domain.Song, index int) {
 			a.statusBar.SetText(FormatSongInfo(*song, index, playingStatus, progressBar))
 		}
 	})
+}
+
+// showSearch displays the search modal view
+func (a *App) showSearch() {
+	if a.searchView == nil {
+		return
+	}
+
+	// Create modal container
+	modal := tview.NewFlex().
+		SetDirection(tview.FlexRow).
+		AddItem(nil, 0, 1, false).
+		AddItem(tview.NewFlex().
+			SetDirection(tview.FlexColumn).
+			AddItem(nil, 0, 1, false).
+			AddItem(a.searchView.GetContainer(), 80, 0, true).
+			AddItem(nil, 0, 1, false), 20, 0, true).
+		AddItem(nil, 0, 1, false)
+
+	// Add modal to root
+	a.tviewApp.SetRoot(modal, true)
+	a.searchView.Show()
+}
+
+// showHelp displays the help modal view
+func (a *App) showHelp() {
+	if a.helpView == nil {
+		return
+	}
+
+	// Create modal container
+	modal := tview.NewFlex().
+		SetDirection(tview.FlexRow).
+		AddItem(nil, 0, 1, false).
+		AddItem(tview.NewFlex().
+			SetDirection(tview.FlexColumn).
+			AddItem(nil, 0, 1, false).
+			AddItem(a.helpView.GetContainer(), 60, 0, true).
+			AddItem(nil, 0, 1, false), 20, 0, true).
+		AddItem(nil, 0, 1, false)
+
+	// Add modal to root
+	a.tviewApp.SetRoot(modal, true)
+	a.helpView.Show()
+}
+
+// showQueue displays the queue modal view
+func (a *App) showQueue() {
+	if a.queueView == nil {
+		return
+	}
+
+	// Create modal container
+	modal := tview.NewFlex().
+		SetDirection(tview.FlexRow).
+		AddItem(nil, 0, 1, false).
+		AddItem(tview.NewFlex().
+			SetDirection(tview.FlexColumn).
+			AddItem(nil, 0, 1, false).
+			AddItem(a.queueView.GetContainer(), 80, 0, true).
+			AddItem(nil, 0, 1, false), 20, 0, true).
+		AddItem(nil, 0, 1, false)
+
+	// Add modal to root
+	a.tviewApp.SetRoot(modal, true)
+	a.queueView.Show()
 }
