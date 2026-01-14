@@ -1,8 +1,6 @@
 package player
 
 import (
-	"time"
-
 	"github.com/wildeyedskies/go-mpv/mpv"
 	"github.com/yhkl-dev/NaviCLI/domain"
 )
