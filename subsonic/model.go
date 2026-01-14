@@ -11,6 +11,7 @@ type Client struct {
 	Password   string
 	ClientID   string
 	APIVersion string
+	PageSize   int
 	HttpClient *http.Client
 }
 
@@ -36,7 +37,7 @@ type Song struct {
 	Title        string    `json:"title"`
 	Album        string    `json:"album"`
 	Artist       string    `json:"artist"`
-	Duration     int       `json:"duration"` // 秒数
+	Duration     int       `json:"duration"` // in seconds
 	Track        int       `json:"track"`
 	CoverArt     string    `json:"coverArt"`
 	Size         int64     `json:"size"`
