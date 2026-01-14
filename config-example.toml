@@ -9,7 +9,7 @@ password = "aaa"
 
 # User interface settings (OPTIONAL - defaults shown)
 [ui]
-page_size = 500            # Number of songs to fetch from server
+page_size = 20             # Number of songs displayed per page
 progress_bar_width = 30    # Width of progress bar in characters
 max_column_width = 40      # Maximum width for table columns
 

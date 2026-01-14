@@ -15,6 +15,9 @@ type Library interface {
 	// GetPlayURL returns the streaming URL for a given song ID
 	GetPlayURL(songID string) string
 
+	// GetCoverArtURL returns the URL for album cover art
+	GetCoverArtURL(coverArtID string) string
+
 	// Ping verifies connectivity to the music server
 	Ping() error
 }

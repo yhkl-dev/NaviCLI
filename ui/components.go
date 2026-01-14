@@ -69,12 +69,17 @@ func (a *App) setupTableHeaders() {
 // setupInputHandlers sets up keyboard input handlers
 func (a *App) setupInputHandlers() {
 	a.songTable.SetSelectedFunc(func(row, column int) {
-		if row > 0 && row-1 < len(a.totalSongs) {
+		if row > 0 {
 			_, _, _, loading := a.state.GetState()
 			if loading {
 				return
 			}
-			go a.playSongAtIndex(row - 1)
+			// Calculate global index from page and row
+			startIndex := (a.currentPage - 1) * a.pageSize
+			globalIndex := startIndex + (row - 1)
+			if globalIndex < len(a.totalSongs) {
+				go a.playSongAtIndex(globalIndex)
+			}
 		}
 	})
 
@@ -118,6 +123,12 @@ func (a *App) setupInputHandlers() {
 			case 'q', 'Q':
 				a.showQueue()
 				return nil
+			case ']', '>':
+				a.nextPage()
+				return nil
+			case '[', '<':
+				a.previousPage()
+				return nil
 			}
 		}
 
@@ -130,6 +141,12 @@ func (a *App) setupInputHandlers() {
 			return nil
 		case tcell.KeyLeft:
 			a.playPreviousSong()
+			return nil
+		case tcell.KeyPgDn:
+			a.nextPage()
+			return nil
+		case tcell.KeyPgUp:
+			a.previousPage()
 			return nil
 		}
 		return event
@@ -188,13 +205,15 @@ func (a *App) renderSongTable() {
 	}
 	a.setupTableHeaders()
 	pageData := a.getCurrentPageData()
+	startIndex := (a.currentPage - 1) * a.pageSize
 	termWidth := a.getTerminalWidth()
 
 	for i, song := range pageData {
 		row := i + 1
+		globalIndex := startIndex + i + 1
 		rowStyle := tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorDefault)
 
-		trackCell := tview.NewTableCell(fmt.Sprintf("%d:", row)).
+		trackCell := tview.NewTableCell(fmt.Sprintf("%d:", globalIndex)).
 			SetStyle(rowStyle.Foreground(tcell.ColorLightGreen)).
 			SetAlign(tview.AlignRight)
 
@@ -346,7 +365,12 @@ func (a *App) updatePlayingDisplay(song *domain.Song, index int) {
 			a.progressBar.SetText(progressText)
 		}
 		if a.statusBar != nil {
-			a.statusBar.SetText(FormatSongInfo(*song, index, playingStatus, progressBar))
+			// 使用带封面的格式，如果有封面的话
+			if a.currentCover != "" {
+				a.statusBar.SetText(FormatSongInfoWithCover(*song, index, playingStatus, progressBar, a.currentCover))
+			} else {
+				a.statusBar.SetText(FormatSongInfo(*song, index, playingStatus, progressBar))
+			}
 		}
 	})
 }

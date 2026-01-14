@@ -36,9 +36,13 @@ func NewHelpView(app *App) *HelpView {
 
 [lightgreen]Navigation:[-]
   [white]↑ / ↓[-]       Navigate song list
+  [white]< / >[-]       Previous/Next page
+  [white][ / ][-]       Previous/Next page (alternative)
+  [white]PgUp/PgDn[-]   Previous/Next page (alternative)
   [white]/[-]           Open search
   [white]?[-]           Show this help panel
   [white]q / Q[-]       Show playback queue
+  [white]i / I[-]       Show now playing (with cover art)
 
 [lightgreen]General:[-]
   [white]ESC[-]         Close modal / Exit program

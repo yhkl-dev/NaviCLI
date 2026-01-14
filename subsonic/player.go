@@ -7,9 +7,13 @@ import (
 	"net/http"
 )
 
-func (c *Client) GetRandomSongs() ([]Song, error) {
+func (c *Client) GetRandomSongs(size int) ([]Song, error) {
+	// Use provided size, fallback to c.PageSize if size is 0
+	if size <= 0 {
+		size = c.PageSize
+	}
 	params := c.buildParams(map[string]string{
-		"size":   fmt.Sprintf("%d", c.PageSize),
+		"size":   fmt.Sprintf("%d", size),
 		"format": "json",
 	})
 	requestUrl := fmt.Sprintf("%s/rest/getRandomSongs?%s", c.BaseURL, params.Encode())
@@ -103,4 +107,16 @@ func (c *Client) GetPlayURL(songID string) string {
 		"format": "mp3",
 	})
 	return fmt.Sprintf("%s/rest/stream.view?%s", c.BaseURL, params.Encode())
+}
+
+// GetCoverArtURL returns the URL for album cover art
+func (c *Client) GetCoverArtURL(coverArtID string) string {
+	if coverArtID == "" {
+		return ""
+	}
+	params := c.buildParams(map[string]string{
+		"id":   coverArtID,
+		"size": "300", // 300x300 pixels
+	})
+	return fmt.Sprintf("%s/rest/getCoverArt.view?%s", c.BaseURL, params.Encode())
 }

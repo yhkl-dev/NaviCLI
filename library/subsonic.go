@@ -21,7 +21,7 @@ func NewSubsonicLibrary(client *subsonic.Client) *SubsonicLibrary {
 
 // GetRandomSongs retrieves random songs from the Subsonic server
 func (s *SubsonicLibrary) GetRandomSongs(count int) ([]domain.Song, error) {
-	songs, err := s.client.GetRandomSongs()
+	songs, err := s.client.GetRandomSongs(count)
 	if err != nil {
 		return nil, err
 	}
@@ -40,6 +40,11 @@ func (s *SubsonicLibrary) SearchSongs(query string, limit int) ([]domain.Song, e
 // GetPlayURL returns the streaming URL for a song
 func (s *SubsonicLibrary) GetPlayURL(songID string) string {
 	return s.client.GetPlayURL(songID)
+}
+
+// GetCoverArtURL returns the URL for album cover art
+func (s *SubsonicLibrary) GetCoverArtURL(coverArtID string) string {
+	return s.client.GetCoverArtURL(coverArtID)
 }
 
 // Ping verifies connectivity to the Subsonic server

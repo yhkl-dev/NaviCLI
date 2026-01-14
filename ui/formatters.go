@@ -30,6 +30,22 @@ func FormatSongInfo(track domain.Song, index int, status, progressBar string) st
 		float64(track.Size)/1024/1024, track.Artist, track.Album, track.Album, progressBar)
 }
 
+// FormatSongInfoWithCover creates a formatted info display with cover art
+func FormatSongInfoWithCover(track domain.Song, index int, status, progressBar, coverArt string) string {
+	return fmt.Sprintf(`
+[white]Current %d:
+%s
+
+%s
+
+[darkgray][play] %s | [darkgray]%.1f MB
+[gray]Artist: %s
+[gray]Album:  %s
+%s`,
+		index+1, status, coverArt, FormatDuration(track.Duration),
+		float64(track.Size)/1024/1024, track.Artist, track.Album, progressBar)
+}
+
 // CreateProgressBar creates a visual progress bar
 func CreateProgressBar(progress float64, width int) string {
 	filledWidth := int(progress * float64(width))

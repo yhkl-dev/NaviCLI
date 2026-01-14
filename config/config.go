@@ -50,7 +50,7 @@ func (c *Config) Validate() error {
 func DefaultConfig() *Config {
 	return &Config{
 		UI: UIConfig{
-			PageSize:         500,
+			PageSize:         20,
 			ProgressBarWidth: 30,
 			MaxColumnWidth:   40,
 		},
