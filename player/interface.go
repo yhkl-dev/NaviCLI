@@ -23,6 +23,9 @@ type Player interface {
 	// GetVolume returns the current volume level
 	GetVolume() (float64, error)
 
+	// SetVolume sets the volume level (0-100)
+	SetVolume(volume float64) error
+
 	// IsPlaying returns whether audio is currently playing
 	IsPlaying() bool
 

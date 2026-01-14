@@ -33,6 +33,8 @@ func NewHelpView(app *App) *HelpView {
   [white]p / P[-]       Previous song
   [white]→[-]           Next song (alternative)
   [white]←[-]           Previous song (alternative)
+  [white]+ / =[-]       Volume up (+5%)
+  [white]- / _[-]       Volume down (-5%)
 
 [lightgreen]Navigation:[-]
   [white]↑ / ↓[-]       Navigate song list
@@ -42,7 +44,6 @@ func NewHelpView(app *App) *HelpView {
   [white]/[-]           Open search
   [white]?[-]           Show this help panel
   [white]q / Q[-]       Show playback queue
-  [white]i / I[-]       Show now playing (with cover art)
 
 [lightgreen]General:[-]
   [white]ESC[-]         Close modal / Exit program

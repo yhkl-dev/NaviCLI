@@ -129,6 +129,12 @@ func (a *App) setupInputHandlers() {
 			case '[', '<':
 				a.previousPage()
 				return nil
+			case '+', '=':
+				a.volumeUp()
+				return nil
+			case '-', '_':
+				a.volumeDown()
+				return nil
 			}
 		}
 

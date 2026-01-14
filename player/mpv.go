@@ -85,6 +85,21 @@ func (p *MPVPlayer) GetVolume() (float64, error) {
 	return p.instance.GetVolume()
 }
 
+// SetVolume sets the volume level (0-100)
+func (p *MPVPlayer) SetVolume(volume float64) error {
+	if p.instance == nil {
+		return fmt.Errorf("MPV instance not initialized")
+	}
+	// 限制音量范围
+	if volume < 0 {
+		volume = 0
+	} else if volume > 100 {
+		volume = 100
+	}
+	// 使用 MPV 命令设置音量
+	return p.instance.Command([]string{"set", "volume", fmt.Sprintf("%.0f", volume)})
+}
+
 // IsPlaying returns whether audio is currently playing (not implemented in base mpvplayer)
 func (p *MPVPlayer) IsPlaying() bool {
 	// This would need to check the actual MPV state

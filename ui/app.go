@@ -314,6 +314,32 @@ func (a *App) playPreviousSong() {
 	go a.playSongAtIndex(prevIndex)
 }
 
+// volumeUp increases the volume by 5%
+func (a *App) volumeUp() {
+	currentVol, err := a.player.GetVolume()
+	if err != nil {
+		return
+	}
+	newVol := currentVol + 5
+	if newVol > 100 {
+		newVol = 100
+	}
+	a.player.SetVolume(newVol)
+}
+
+// volumeDown decreases the volume by 5%
+func (a *App) volumeDown() {
+	currentVol, err := a.player.GetVolume()
+	if err != nil {
+		return
+	}
+	newVol := currentVol - 5
+	if newVol < 0 {
+		newVol = 0
+	}
+	a.player.SetVolume(newVol)
+}
+
 // updateStatus updates the status bar
 func (a *App) updateStatus(info string) {
 	a.tviewApp.QueueUpdateDraw(func() {
