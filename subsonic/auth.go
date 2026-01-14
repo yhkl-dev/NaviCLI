@@ -2,45 +2,57 @@ package subsonic
 
 import (
 	"crypto/md5"
+	"crypto/rand"
 	"fmt"
-	"math/rand"
 	"net/http"
 	"net/url"
 	"time"
 )
 
-var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
-func randSeq(n int) string {
-	b := make([]rune, n)
-	for i := range b {
-		b[i] = letters[rand.Intn(len(letters))]
+func randSeq(n int) (string, error) {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("failed to generate random bytes: %w", err)
 	}
-	return string(b)
+	result := make([]byte, n)
+	for i, v := range b {
+		result[i] = letters[int(v)%len(letters)]
+	}
+	return string(result), nil
 }
 
-func Init(baseUrl, username, password, clientId, apiVersion string) *Client {
+func Init(baseUrl, username, password, clientId, apiVersion string, pageSize int, httpTimeout time.Duration) *Client {
 	client := &Client{
 		BaseURL:    baseUrl,
 		Username:   username,
 		Password:   password,
 		ClientID:   clientId,
 		APIVersion: apiVersion,
-		HttpClient: &http.Client{Timeout: 30 * time.Second},
+		PageSize:   pageSize,
+		HttpClient: &http.Client{Timeout: httpTimeout},
 	}
 	return client
 }
 
-func (c *Client) authToken(password string) (string, string) {
-	salt := randSeq(8)
+func (c *Client) authToken(password string) (string, string, error) {
+	salt, err := randSeq(8)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to generate salt: %w", err)
+	}
 	token := fmt.Sprintf("%x", md5.Sum([]byte(password+salt)))
 
-	return token, salt
+	return token, salt, nil
 }
 
 func (c *Client) buildParams(extraParams map[string]string) url.Values {
-	salt := "randomsalt"
-	token, salt := c.authToken(c.Password)
+	token, salt, err := c.authToken(c.Password)
+	if err != nil {
+		// In Phase 3 refactoring, this will return error properly
+		// For now, panic to maintain current function signature
+		panic(fmt.Sprintf("authentication failed: %v", err))
+	}
 	params := url.Values{}
 	params.Add("u", c.Username)
 	params.Add("t", token)

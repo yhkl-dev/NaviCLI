@@ -1,4 +1,23 @@
+# NaviCLI Configuration File
+# Copy this file to config.toml and customize for your setup
+
+# Navidrome server connection settings (REQUIRED)
 [server]
-url="http://192.168.2.1:4153"
-username="bb"
-password="aaa"
+url = "http://192.168.2.1:4153"
+username = "bb"
+password = "aaa"
+
+# User interface settings (OPTIONAL - defaults shown)
+[ui]
+page_size = 500            # Number of songs to fetch from server
+progress_bar_width = 30    # Width of progress bar in characters
+max_column_width = 40      # Maximum width for table columns
+
+# Player settings (OPTIONAL - defaults shown)
+[player]
+http_timeout = 30          # HTTP request timeout in seconds
+
+# Subsonic API client settings (OPTIONAL - defaults shown)
+[client]
+id = "navicli"             # Client identifier sent to server
+api_version = "1.16.1"     # Subsonic API version to use

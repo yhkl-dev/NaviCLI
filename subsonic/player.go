@@ -7,21 +7,21 @@ import (
 	"net/http"
 )
 
-func (c *Client) GetPlaylists() ([]Song, error) {
+func (c *Client) GetRandomSongs() ([]Song, error) {
 	params := c.buildParams(map[string]string{
-		"size":   "500",
+		"size":   fmt.Sprintf("%d", c.PageSize),
 		"format": "json",
 	})
 	requestUrl := fmt.Sprintf("%s/rest/getRandomSongs?%s", c.BaseURL, params.Encode())
 	req, err := http.NewRequest("GET", requestUrl, nil)
 	if err != nil {
-		return nil, fmt.Errorf("创建请求失败: %w", err)
+		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	req.Header.Set("Accept", "application/json")
 	resp, err := c.HttpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("请求失败: %w", err)
+		return nil, fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -49,11 +49,11 @@ func (c *Client) GetPlaylists() ([]Song, error) {
 	}
 
 	if err := json.Unmarshal(body, &subsonicResp); err != nil {
-		return nil, fmt.Errorf("JSON解析失败: %w", err)
+		return nil, fmt.Errorf("failed to parse JSON response: %w", err)
 	}
 
 	if subsonicResp.SubsonicResponse.Status != "ok" {
-		return nil, fmt.Errorf("subsonic错误 %d: %s",
+		return nil, fmt.Errorf("subsonic error %d: %s",
 			subsonicResp.SubsonicResponse.Error.Code,
 			subsonicResp.SubsonicResponse.Error.Message)
 	}
@@ -69,7 +69,6 @@ func (c *Client) GetServerInfo() error {
 		return err
 	}
 	defer resp.Body.Close()
-	fmt.Println(resp)
 	return nil
 }
 func (c *Client) SearchSongs(query string) ([]Song, error) {
@@ -92,8 +91,6 @@ func (c *Client) SearchSongs(query string) ([]Song, error) {
 		} `json:"subsonic-response"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		fmt.Println(err)
-
 		return nil, err
 	}
 
