@@ -39,7 +39,7 @@ func NewQueueView(app *App) *QueueView {
 
 	qv.container.SetBorder(true).
 		SetTitle(" Playback Queue (ESC/q to close) ").
-		SetBorderColor(tcell.ColorCyan)
+		SetBorderColor(tcell.NewHexColor(0x00bcd4))
 
 	return qv
 }

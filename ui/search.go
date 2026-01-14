@@ -51,6 +51,14 @@ func NewSearchView(app *App) *SearchView {
 		}
 	})
 
+	sv.resultTable.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		if event.Key() == tcell.KeyEscape {
+			sv.Close()
+			return nil
+		}
+		return event
+	})
+
 	// Setup header
 	headerStyle := tcell.StyleDefault.Foreground(tcell.ColorYellow).Attributes(tcell.AttrBold)
 	sv.resultTable.SetCell(0, 0, tview.NewTableCell("#").SetStyle(headerStyle))
@@ -67,6 +75,15 @@ func NewSearchView(app *App) *SearchView {
 	sv.container.SetBorder(true).
 		SetTitle(" Search (ESC to close) ").
 		SetBorderColor(tcell.ColorGreen)
+
+	// Capture ESC at container level to ensure it works regardless of focus
+	sv.container.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		if event.Key() == tcell.KeyEscape {
+			sv.Close()
+			return nil
+		}
+		return event
+	})
 
 	return sv
 }

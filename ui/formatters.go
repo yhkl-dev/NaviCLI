@@ -55,10 +55,13 @@ func CreateWelcomeMessage(totalSongs int) string {
 [darkgray][source] Navidrome
 [darkgray][favourite]
 
-[gray]Press SPACE to play/pause
-[gray]Press N/P or ←/→ for prev/next
-[gray]Press ESC to exit
+[gray]Playback:
+[gray]  SPACE (play/pause)
+[gray]  N/P or ←/→ (prev/next)
+[gray]Features:
+[gray]  / (search) | ? (help) | Q (queue)
 [gray]Select a track to start
+[gray]ESC to exit
 
 [darkgray][red]func[darkgray] [green]navicli[darkgray]([yellow]task[darkgray] [lightblue]string[darkgray]) [lightblue]string[darkgray] {
 [darkgray]    [red]return[darkgray] "^A series of mixes for listening while" [red]+[darkgray] task [red]+[darkgray] \
@@ -67,18 +70,15 @@ func CreateWelcomeMessage(totalSongs int) string {
 [darkgray]
 [darkgray]task := "[yellow]programming[darkgray]"
 
-[darkgray]// %d songs
+[darkgray]// %d songs loaded
+[darkgray]// Search, Queue, Help - All ready
 [darkgray]// Written by github.com/yhkl-dev
-[darkgray]// Ready to play
 [darkgray]// Auto-play next enabled`, totalSongs)
 }
 
 // CreateIdleDisplay creates the idle state display
 func CreateIdleDisplay() string {
 	return `
-[darkgray][about] [darkgray][credits] [darkgray][rss.xml]
-[darkgray][patreon] [darkgray][podcasts.apple]
-[darkgray][folder.jpg] [darkgray][enterprise mode]
 [darkgray][invert] [darkgray][fullscreen]`
 }
 
