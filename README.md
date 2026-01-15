@@ -30,23 +30,48 @@ A lightweight command line music player for Navidrome, written in Go.
 ### Prerequisites
 ```bash
 brew install mpv
-
-export C_INCLUDE_PATH=/opt/homebrew/include:$C_INCLUDE_PATH
-export LIBRARY_PATH=/opt/homebrew/lib:$LIBRARY_PATH
 ```
 
-### Install from Release (Recommended)
+### Install via Homebrew (Recommended)
+```bash
+# Add the tap
+brew tap yhkl-dev/navicli
+
+# Install navicli
+brew install navicli
+
+# Verify installation
+navicli --help
+```
+
+To update NaviCLI in the future:
+```bash
+brew upgrade navicli
+```
+
+To uninstall:
+```bash
+brew uninstall navicli
+brew untap yhkl-dev/navicli
+```
+
+### Install from Release
 Download the latest pre-built binary from [Releases](https://github.com/yhkl-dev/NaviCLI/releases):
 
 ```bash
-curl -L https://github.com/yhkl-dev/NaviCLI/releases/latest/download/navicli-darwin-amd64 -o navicli
-chmod +x navicli
-sudo mv navicli /usr/local/bin/
+# For Apple Silicon (M1/M2/M3):
+curl -L https://github.com/yhkl-dev/NaviCLI/releases/latest/download/release.tar.gz -o release.tar.gz
+tar xzf release.tar.gz
+chmod +x navicli-darwin-arm64
+sudo mv navicli-darwin-arm64 /usr/local/bin/navicli
 ```
 
 ### Install from Source (Go 1.16+ required)
 ```bash
-go install github.com/yhkl-dev/NaviCLI@latest
+git clone https://github.com/yhkl-dev/NaviCLI.git
+cd NaviCLI
+go build -o navicli .
+sudo mv navicli /usr/local/bin/
 ```
 
 ### Configuration
