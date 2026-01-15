@@ -56,6 +56,27 @@ func NewSearchView(app *App) *SearchView {
 			sv.Close()
 			return nil
 		}
+
+		// 获取当前选中的行
+		row, _ := sv.resultTable.GetSelection()
+		if row > 0 && row-1 < len(sv.results) {
+			song := sv.results[row-1]
+
+			// Enter - 立即播放
+			if event.Key() == tcell.KeyEnter {
+				sv.playSong(song)
+				sv.Close()
+				return nil
+			}
+
+			// N - 添加到下一首播放
+			if event.Rune() == 'n' || event.Rune() == 'N' {
+				sv.playNext(song)
+				sv.Close()
+				return nil
+			}
+		}
+
 		return event
 	})
 
@@ -73,7 +94,7 @@ func NewSearchView(app *App) *SearchView {
 		AddItem(sv.resultTable, 0, 1, false)
 
 	sv.container.SetBorder(true).
-		SetTitle(" Search (ESC to close) ").
+		SetTitle(" Search [ENTER: Play | N: Play Next | ESC: Close] ").
 		SetBorderColor(tcell.ColorGreen)
 
 	// Capture ESC at container level to ensure it works regardless of focus
@@ -220,4 +241,46 @@ func (sv *SearchView) playSong(song domain.Song) {
 	}
 
 	sv.app.playSongAtIndex(index)
+}
+
+// playNext adds the selected song to play next (after current song)
+func (sv *SearchView) playNext(song domain.Song) {
+	// Check if song already exists in list
+	existingIndex := -1
+	for i, s := range sv.app.totalSongs {
+		if s.ID == song.ID {
+			existingIndex = i
+			break
+		}
+	}
+
+	// Get current playing index
+	_, currentIndex, _, _ := sv.app.state.GetState()
+
+	// If song already exists, remove it first
+	if existingIndex != -1 {
+		sv.app.totalSongs = append(sv.app.totalSongs[:existingIndex], sv.app.totalSongs[existingIndex+1:]...)
+		// Adjust currentIndex if necessary
+		if existingIndex <= currentIndex {
+			currentIndex--
+		}
+	}
+
+	// Insert after current song
+	insertPos := currentIndex + 1
+	if insertPos > len(sv.app.totalSongs) {
+		insertPos = len(sv.app.totalSongs)
+	}
+
+	// Insert song at position
+	sv.app.totalSongs = append(sv.app.totalSongs[:insertPos], append([]domain.Song{song}, sv.app.totalSongs[insertPos:]...)...)
+
+	// Update total pages
+	sv.app.totalPages = (len(sv.app.totalSongs) + sv.app.pageSize - 1) / sv.app.pageSize
+
+	// Refresh the display
+	sv.app.tviewApp.QueueUpdateDraw(func() {
+		sv.app.renderSongTable()
+		sv.app.updateStatusWithPageInfo()
+	})
 }

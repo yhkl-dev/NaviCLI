@@ -15,37 +15,67 @@ func FormatDuration(seconds int) string {
 
 // FormatSongInfo creates a formatted info display for a song
 func FormatSongInfo(track domain.Song, index int, status, progressBar string) string {
+	// 格式化比特率
+	bitRateStr := ""
+	if track.BitRate > 0 {
+		bitRateStr = fmt.Sprintf("%d kbps", track.BitRate)
+	}
+
+	// 格式化文件格式
+	formatStr := track.Suffix
+	if formatStr == "" {
+		formatStr = "unknown"
+	}
+
+	// 格式化曲目编号
+	trackNumStr := ""
+	if track.Track > 0 {
+		trackNumStr = fmt.Sprintf("#%d", track.Track)
+	}
+
+	// 格式化采样率
+	sampleRateStr := ""
+	if track.SampleRate > 0 {
+		sampleRateStr = fmt.Sprintf("%.1f kHz", float64(track.SampleRate)/1000)
+	}
+
+	// 组合技术信息
+	techInfo := ""
+	if bitRateStr != "" {
+		techInfo = bitRateStr
+	}
+	if sampleRateStr != "" {
+		if techInfo != "" {
+			techInfo += " | " + sampleRateStr
+		} else {
+			techInfo = sampleRateStr
+		}
+	}
+	if techInfo == "" {
+		techInfo = "N/A"
+	}
+
 	return fmt.Sprintf(`
 [white]Current %d:
 %s
 
-[darkgray][play] %s
-[darkgray][source] %.1f MB
-[darkgray][favourite]
+[darkgray][duration] %s [darkgray][format] %s [darkgray][size] %.1f MB
+[darkgray][quality] %s
 
-[gray]%s - %s
-[gray]%s
-%s`,
-		index+1, status, FormatDuration(track.Duration),
-		float64(track.Size)/1024/1024, track.Artist, track.Album, track.Album, progressBar)
+[gray]Artist: [white]%s
+[gray]Album:  [white]%s %s
+%s
+
+[darkgray] SPACE (pause)
+[darkgray] N/P (next/prev)
+[darkgray] +/- (volume)
+[darkgray] ? (help)`,
+		index+1, status, FormatDuration(track.Duration), formatStr,
+		float64(track.Size)/1024/1024, techInfo,
+		track.Artist, track.Album, trackNumStr, progressBar)
 }
 
 // FormatSongInfoWithCover creates a formatted info display with cover art
-func FormatSongInfoWithCover(track domain.Song, index int, status, progressBar, coverArt string) string {
-	return fmt.Sprintf(`
-[white]Current %d:
-%s
-
-%s
-
-[darkgray][play] %s | [darkgray]%.1f MB
-[gray]Artist: %s
-[gray]Album:  %s
-%s`,
-		index+1, status, coverArt, FormatDuration(track.Duration),
-		float64(track.Size)/1024/1024, track.Artist, track.Album, progressBar)
-}
-
 // CreateProgressBar creates a visual progress bar
 func CreateProgressBar(progress float64, width int) string {
 	filledWidth := int(progress * float64(width))

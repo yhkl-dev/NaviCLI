@@ -22,6 +22,14 @@ func (a *App) createHomepage() {
 		SetWrap(true)
 	a.statusBar.SetBorder(false)
 
+	// 创建搜索输入框
+	a.searchInput = tview.NewInputField().
+		SetLabel("[yellow]Search: ").
+		SetFieldWidth(0).
+		SetPlaceholder("Type to search, ESC to clear, ENTER to filter...").
+		SetFieldBackgroundColor(tcell.ColorBlack)
+	a.searchInput.SetBorder(false)
+
 	a.songTable = tview.NewTable().
 		SetBorders(false).
 		SetSelectable(true, false).
@@ -29,11 +37,11 @@ func (a *App) createHomepage() {
 	a.songTable.SetBorder(false)
 
 	// Initialize views
-	a.searchView = NewSearchView(a)
 	a.helpView = NewHelpView(a)
 	a.queueView = NewQueueView(a)
 
 	a.setupTableHeaders()
+	a.setupSearchInput()
 	a.setupInputHandlers()
 
 	leftPanel := tview.NewFlex().
@@ -42,6 +50,7 @@ func (a *App) createHomepage() {
 
 	rightPanel := tview.NewFlex().
 		SetDirection(tview.FlexRow).
+		AddItem(a.searchInput, 1, 0, false).
 		AddItem(a.songTable, 0, 1, true)
 
 	mainLayout := tview.NewFlex().
@@ -66,6 +75,37 @@ func (a *App) setupTableHeaders() {
 	}
 }
 
+// setupSearchInput sets up the search input field handlers
+func (a *App) setupSearchInput() {
+	a.searchInput.SetChangedFunc(func(text string) {
+		if text == "" && a.isSearchMode {
+			// 清空搜索，恢复原始列表
+			a.clearSearch()
+		}
+	})
+
+	a.searchInput.SetDoneFunc(func(key tcell.Key) {
+		if key == tcell.KeyEnter {
+			query := a.searchInput.GetText()
+			if query != "" {
+				a.performSearch(query)
+			}
+		} else if key == tcell.KeyEscape {
+			a.clearSearch()
+			a.tviewApp.SetFocus(a.songTable)
+		}
+	})
+
+	a.searchInput.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		if event.Key() == tcell.KeyEscape {
+			a.clearSearch()
+			a.tviewApp.SetFocus(a.songTable)
+			return nil
+		}
+		return event
+	})
+}
+
 // setupInputHandlers sets up keyboard input handlers
 func (a *App) setupInputHandlers() {
 	a.songTable.SetSelectedFunc(func(row, column int) {
@@ -85,9 +125,6 @@ func (a *App) setupInputHandlers() {
 
 	a.tviewApp.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		// Handle modal views first
-		if a.searchView != nil && a.searchView.IsActive() {
-			return event // Let search view handle its own input
-		}
 		if a.helpView != nil && a.helpView.IsActive() {
 			if event.Key() == tcell.KeyEscape || event.Rune() == '?' {
 				a.helpView.Close()
@@ -115,7 +152,7 @@ func (a *App) setupInputHandlers() {
 				a.playPreviousSong()
 				return nil
 			case '/':
-				a.showSearch()
+				a.tviewApp.SetFocus(a.searchInput)
 				return nil
 			case '?':
 				a.showHelp()
@@ -167,26 +204,33 @@ func (a *App) handleSpaceKey() {
 			}
 		}()
 
-		currentSong, currentIndex, isPlaying, _ := a.state.GetState()
+		currentSong, currentIndex, _, _ := a.state.GetState()
 		if currentSong == nil {
 			return
 		}
 
-		a.player.Pause()
-		newPlayingState := !isPlaying
-		a.state.SetPlaying(newPlayingState)
-
-		var status, progressBar string
-		if newPlayingState {
-			status = fmt.Sprintf("[lightgreen]%s", currentSong.Title)
-			progressBar = "[lightgreen]▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░░░░░░ --%%"
-		} else {
-			status = fmt.Sprintf("[yellow]%s [darkgray](PAUSED)", currentSong.Title)
-			progressBar = "[darkgray]▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░░░░░░ --%%"
+		// 切换暂停状态
+		_, err := a.player.Pause()
+		if err != nil {
+			return
 		}
 
-		info := FormatSongInfo(*currentSong, currentIndex, status, progressBar)
-		a.updateStatus(info)
+		// 获取实际的播放状态
+		isPaused, err := a.player.IsPaused()
+		if err != nil {
+			return
+		}
+
+		// 更新应用状态（注意：isPaused=true 表示暂停，isPlaying应该是false）
+		newPlayingState := !isPaused
+		a.state.SetPlaying(newPlayingState)
+
+		// 立即更新显示，使用与 updateProgressBar 相同的逻辑
+		if newPlayingState {
+			a.updatePlayingDisplay(currentSong, currentIndex)
+		} else {
+			a.updatePausedDisplay(currentSong, currentIndex)
+		}
 	}()
 }
 
@@ -202,6 +246,53 @@ func (a *App) handleExit() {
 		time.Sleep(1 * time.Second)
 		os.Exit(0)
 	}()
+}
+
+// performSearch executes search and updates the table
+func (a *App) performSearch(query string) {
+	if !a.isSearchMode {
+		// 保存原始列表
+		a.originalSongs = make([]domain.Song, len(a.totalSongs))
+		copy(a.originalSongs, a.totalSongs)
+		a.isSearchMode = true
+	}
+
+	go func() {
+		songs, err := a.library.SearchSongs(query, 100)
+		if err != nil {
+			a.tviewApp.QueueUpdateDraw(func() {
+				a.statusBar.SetText(fmt.Sprintf("[red]Search failed: %v", err))
+			})
+			return
+		}
+
+		a.tviewApp.QueueUpdateDraw(func() {
+			a.totalSongs = songs
+			a.totalPages = (len(a.totalSongs) + a.pageSize - 1) / a.pageSize
+			if a.totalPages == 0 {
+				a.totalPages = 1
+			}
+			a.currentPage = 1
+			a.renderSongTable()
+			a.updateStatusWithPageInfo()
+			a.searchInput.SetFieldBackgroundColor(tcell.ColorDarkGreen)
+		})
+	}()
+}
+
+// clearSearch clears search and restores original list
+func (a *App) clearSearch() {
+	if a.isSearchMode {
+		a.totalSongs = a.originalSongs
+		a.originalSongs = nil
+		a.isSearchMode = false
+		a.totalPages = (len(a.totalSongs) + a.pageSize - 1) / a.pageSize
+		a.currentPage = 1
+		a.renderSongTable()
+		a.updateStatusWithPageInfo()
+	}
+	a.searchInput.SetText("")
+	a.searchInput.SetFieldBackgroundColor(tcell.ColorBlack)
 }
 
 // renderSongTable renders the song table with current page data
@@ -315,17 +406,34 @@ func (a *App) updateIdleDisplay() {
 func (a *App) updatePausedDisplay(song *domain.Song, index int) {
 	a.tviewApp.QueueUpdateDraw(func() {
 		if a.progressBar != nil && a.statusBar != nil {
+			// 获取当前播放进度
+			currentPos, totalDuration, err := a.player.GetProgress()
+			if err != nil || totalDuration <= 0 {
+				totalDuration = float64(song.Duration)
+				currentPos = 0
+			}
+
+			currentTime := FormatDuration(int(currentPos))
+			totalTime := FormatDuration(int(totalDuration))
+
+			progress := currentPos / totalDuration
+			if progress > 1 {
+				progress = 1
+			} else if progress < 0 {
+				progress = 0
+			}
+
 			volumeText := "??"
 			if vol, err := a.player.GetVolume(); err == nil {
 				volumeText = fmt.Sprintf("%.0f%%", vol)
 			}
 
-			pausedDisplay := fmt.Sprintf(`
-[darkgray]00:00:00 [darkgray][v-] [white]%s [darkgray][v+] [darkgray][random]`, volumeText)
-			a.progressBar.SetText(pausedDisplay)
+			pausedProgressText := fmt.Sprintf(`
+[darkgray]%s/%s [darkgray][v-] [white]%s [darkgray][v+] [darkgray][paused]`, currentTime, totalTime, volumeText)
+			a.progressBar.SetText(pausedProgressText)
 
 			pausedStatus := fmt.Sprintf("[yellow]%s [darkgray](PAUSED)", song.Title)
-			progressBar := "[darkgray]▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░░░░░░ 0%"
+			progressBar := CreateProgressBar(progress, a.cfg.UI.ProgressBarWidth)
 			a.statusBar.SetText(FormatSongInfo(*song, index, pausedStatus, progressBar))
 		}
 	})
@@ -372,35 +480,9 @@ func (a *App) updatePlayingDisplay(song *domain.Song, index int) {
 		}
 		if a.statusBar != nil {
 			// 使用带封面的格式，如果有封面的话
-			if a.currentCover != "" {
-				a.statusBar.SetText(FormatSongInfoWithCover(*song, index, playingStatus, progressBar, a.currentCover))
-			} else {
-				a.statusBar.SetText(FormatSongInfo(*song, index, playingStatus, progressBar))
-			}
+			a.statusBar.SetText(FormatSongInfo(*song, index, playingStatus, progressBar))
 		}
 	})
-}
-
-// showSearch displays the search modal view
-func (a *App) showSearch() {
-	if a.searchView == nil {
-		return
-	}
-
-	// Create modal container
-	modal := tview.NewFlex().
-		SetDirection(tview.FlexRow).
-		AddItem(nil, 0, 1, false).
-		AddItem(tview.NewFlex().
-			SetDirection(tview.FlexColumn).
-			AddItem(nil, 0, 1, false).
-			AddItem(a.searchView.GetContainer(), 80, 0, true).
-			AddItem(nil, 0, 1, false), 20, 0, true).
-		AddItem(nil, 0, 1, false)
-
-	// Add modal to root
-	a.tviewApp.SetRoot(modal, true)
-	a.searchView.Show()
 }
 
 // showHelp displays the help modal view
