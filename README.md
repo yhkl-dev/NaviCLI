@@ -5,7 +5,8 @@
 
 A lightweight command line music player for Navidrome, written in Go.
 
-![NaviCLI Screenshot](./screenshot/image.png)
+![NaviCLI Screenshot](./screenshot/image1.png)
+![NaviCLI Screenshot](./screenshot/image2.png)
 ## Background
 > I found that Feishin client is very slow on MacOS.
 > To be honest, we don't need a GUI for listening to music.
@@ -15,9 +16,13 @@ A lightweight command line music player for Navidrome, written in Go.
 ## Features
 
 - 🚀 Fast and lightweight
-- 🎨 Terminal-based UI with colors
-- ⏯ Play/pause/skip controls
-- 🔍 Basic music library browsing
+- 🎨 Terminal-based UI with colors and progress display
+- ⏯ Play/pause/skip controls with real-time progress
+- 🔍 Integrated search functionality
+- 🔊 Volume control
+- 📊 Song information display (artist, album, bitrate, format, etc.)
+- ⌨️ Intuitive keyboard shortcuts
+- 📝 Pagination support (multiple pages of songs)
 - 🛠 Written in pure Go
 
 ## Installation
@@ -58,11 +63,47 @@ password = "your-password"
 navicli
 ```
 
-Key bindings:
+### Keyboard Shortcuts
+
+**Playback Controls:**
 - `Space`: Play/Pause
-- `n`/`→`: Next track
-- `p`/`←`: Previous track
-- `ESC`: Quit
+- `n` or `N`: Next track
+- `p` or `P`: Previous track
+- `→`: Next track (alternative)
+- `←`: Previous track (alternative)
+- `+` or `=`: Volume up (+5%)
+- `-` or `_`: Volume down (-5%)
+
+**Navigation:**
+- `↑` / `↓`: Select song in list
+- `<` or `>`: Previous/Next page
+- `[` or `]`: Previous/Next page (alternative)
+- `PgUp`/`PgDn`: Previous/Next page (alternative)
+- `/`: Open search
+- `?`: Show help panel
+- `q` or `Q`: Show playback queue
+- `ESC`: Close search/modal or quit (when not in search mode)
+- `Ctrl+C`: Force quit
+
+### Search
+
+1. Press `/` to open the search box at the top
+2. Type keywords to search
+3. Press `Enter` to execute search
+4. Results display in the main list
+5. Use `↑↓` keys to select and `Enter` to play
+6. Press `ESC` to clear search and restore original list
+7. Press `Tab` or `↓` to switch focus from search box to list
+
+### Display Information
+
+When playing a song, you can see:
+- Song title and play status (playing/paused)
+- Technical info: Duration, Format, File size
+- Quality info: Bitrate, Sample rate
+- Metadata: Artist, Album, Track number
+- Real-time progress bar with current time and total duration
+- Current volume level
 
 ## Development
 ```bash
@@ -75,10 +116,10 @@ go test ./...
 
 ## Roadmap
 - [ ] Publish to Homebrew
-- [ ] Add search function
-- [ ] Add Lyrics support
-- [ ] Add refresh function
+- [ ] Add lyrics support
 - [ ] Add playlist support
+- [ ] Add favorites/bookmarking
+- [ ] Add shuffle/repeat modes
 - [ ] Cross-platform builds (Linux/Windows)
 
 ## Contributing
