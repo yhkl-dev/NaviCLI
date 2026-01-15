@@ -102,6 +102,11 @@ func (a *App) setupSearchInput() {
 			a.tviewApp.SetFocus(a.songTable)
 			return nil
 		}
+		// 按下箭头键时切换到歌曲列表
+		if event.Key() == tcell.KeyDown || event.Key() == tcell.KeyTab {
+			a.tviewApp.SetFocus(a.songTable)
+			return nil
+		}
 		return event
 	})
 }
@@ -176,7 +181,16 @@ func (a *App) setupInputHandlers() {
 		}
 
 		switch event.Key() {
-		case tcell.KeyEsc, tcell.KeyCtrlC:
+		case tcell.KeyEsc:
+			// 如果在搜索模式，ESC 先清空搜索
+			if a.isSearchMode {
+				a.clearSearch()
+				return nil
+			}
+			// 否则退出程序
+			a.handleExit()
+			return nil
+		case tcell.KeyCtrlC:
 			a.handleExit()
 			return nil
 		case tcell.KeyRight:
@@ -276,6 +290,8 @@ func (a *App) performSearch(query string) {
 			a.renderSongTable()
 			a.updateStatusWithPageInfo()
 			a.searchInput.SetFieldBackgroundColor(tcell.ColorDarkGreen)
+			// 搜索完成后将焦点切回列表，以便能用上下键选择
+			a.tviewApp.SetFocus(a.songTable)
 		})
 	}()
 }
