@@ -28,7 +28,7 @@ func NewSearchView(app *App) *SearchView {
 	sv.inputField = tview.NewInputField().
 		SetLabel("Search: ").
 		SetFieldWidth(0).
-		SetFieldBackgroundColor(tcell.ColorBlack)
+		SetFieldBackgroundColor(tcell.ColorDefault)
 
 	sv.inputField.SetDoneFunc(func(key tcell.Key) {
 		if key == tcell.KeyEnter {
