@@ -74,6 +74,16 @@ go build -o navicli .
 sudo mv navicli /usr/local/bin/
 ```
 
+### Install for Linux(Debian/Ubuntu)
+```bash
+sudo apt install libgl1-mesa-dev libglu1-mesa-dev freeglut3-dev libmpv-dev mpv
+
+git clone https://github.com/yhkl-dev/NaviCLI.git
+cd NaviCLI
+go build -o navicli .
+sudo mv navicli /usr/local/bin/
+```
+
 ### Configuration
 Create a config file at `~/.config/config.toml`:
 ```toml
