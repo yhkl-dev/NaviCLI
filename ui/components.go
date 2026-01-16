@@ -27,7 +27,7 @@ func (a *App) createHomepage() {
 		SetLabel("[yellow]Search: ").
 		SetFieldWidth(0).
 		SetPlaceholder("Type to search, ESC to clear, ENTER to filter...").
-		SetFieldBackgroundColor(tcell.ColorBlack)
+		SetFieldBackgroundColor(tcell.ColorDefault)
 	a.searchInput.SetBorder(false)
 
 	a.songTable = tview.NewTable().
@@ -289,7 +289,7 @@ func (a *App) performSearch(query string) {
 			a.currentPage = 1
 			a.renderSongTable()
 			a.updateStatusWithPageInfo()
-			a.searchInput.SetFieldBackgroundColor(tcell.ColorDarkGreen)
+			a.searchInput.SetFieldBackgroundColor(tcell.ColorDefault)
 			// 搜索完成后将焦点切回列表，以便能用上下键选择
 			a.tviewApp.SetFocus(a.songTable)
 		})
@@ -308,7 +308,7 @@ func (a *App) clearSearch() {
 		a.updateStatusWithPageInfo()
 	}
 	a.searchInput.SetText("")
-	a.searchInput.SetFieldBackgroundColor(tcell.ColorBlack)
+	a.searchInput.SetFieldBackgroundColor(tcell.ColorDefault)
 }
 
 // renderSongTable renders the song table with current page data
