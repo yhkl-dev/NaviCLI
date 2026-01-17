@@ -1,15 +1,62 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_dispatch:
+    inputs:
+      version_bump:
+        description: "Version bump type (patch, minor, major)"
+        required: true
+        default: "patch"
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
 
 jobs:
-  build-and-release:
+  release:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history to get all tags
+
+      - name: Get latest tag and calculate new version
+        id: version
+        run: |
+          # Get the latest tag, or default to v0.0.0 if none exists
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          echo "Latest tag: $LATEST_TAG"
+          
+          # Parse version (remove 'v' prefix)
+          VERSION=${LATEST_TAG#v}
+          MAJOR=$(echo $VERSION | cut -d. -f1)
+          MINOR=$(echo $VERSION | cut -d. -f2)
+          PATCH=$(echo $VERSION | cut -d. -f3)
+          
+          # Increment version based on bump type
+          case "${{ github.event.inputs.version_bump }}" in
+            major)
+              MAJOR=$((MAJOR + 1))
+              MINOR=0
+              PATCH=0
+              ;;
+            minor)
+              MINOR=$((MINOR + 1))
+              PATCH=0
+              ;;
+            patch)
+              PATCH=$((PATCH + 1))
+              ;;
+          esac
+          
+          NEW_VERSION="$MAJOR.$MINOR.$PATCH"
+          NEW_TAG="v$NEW_VERSION"
+          
+          echo "New version: $NEW_VERSION"
+          echo "New tag: $NEW_TAG"
+          echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "tag=$NEW_TAG" >> $GITHUB_OUTPUT
 
       - name: Install mpv (macOS)
         run: brew install mpv
@@ -24,17 +71,37 @@ jobs:
           CGO_ENABLED: 1
           CGO_CFLAGS: "-I$(brew --prefix mpv)/include"
           CGO_LDFLAGS: "-L$(brew --prefix mpv)/lib -lmpv"
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           export C_INCLUDE_PATH=/opt/homebrew/include:$C_INCLUDE_PATH
           export LIBRARY_PATH=/opt/homebrew/lib:$LIBRARY_PATH
-          GOOS=darwin GOARCH=arm64 go build -o navicli-darwin-arm64 .
+          GOOS=darwin GOARCH=arm64 go build -ldflags="-X main.Version=$VERSION" -o navicli-darwin-arm64 .
           tar -czvf release.tar.gz navicli-darwin-*
+
+      - name: Create Git tag
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git tag ${{ steps.version.outputs.tag }}
+          git push origin ${{ steps.version.outputs.tag }}
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
+          tag_name: ${{ steps.version.outputs.tag }}
           files: |
             release.tar.gz
-          body: "## Changelog\n\n- Feature 1\n- Bug fix 2"
+          body: |
+            ## Release ${{ steps.version.outputs.version }}
+            
+            ### What's Changed
+            - Auto-generated release
+            
+            ### Build Info
+            - macOS arm64 binary included
+            - Version: ${{ steps.version.outputs.version }}
+          draft: false
+          prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
