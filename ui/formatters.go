@@ -87,17 +87,18 @@ func CreateProgressBar(progress float64, width int) string {
 
 func CreateWelcomeMessage(totalSongs int) string {
 	return fmt.Sprintf(`
+[white]Current
 [lightgreen] Welcome to NaviCLI
 [darkgray][play] Ready to Play Music!
 [darkgray][source] Source: Navidrome
 
 [darkgray]task := "[yellow]programming[darkgray]"
 [darkgray][red]func[darkgray] [green]navicli[darkgray]([yellow]task[darkgray] [lightblue]string[darkgray]) [lightblue]string[darkgray] {
-[darkgray]    [red]return[darkgray] "A series of mixes for listening while" [red]+[darkgray] task [red]+[darkgray] \
-[darkgray]         "to focus the brain and i nspire the mind.[darkgray]"
+[darkgray]    message := [red]fmt[darkgray].[green]Sprintf[darkgray]("[darkgray]Soundscape for %%s. Keep the flow.", task)
+[darkgray]    [red]return[darkgray] message
 [darkgray]}
 [darkgray]
-[gray]  SPACE (play/pause) |
+[gray]  SPACE (play/pause)
 [gray]  N/P or L/H (next/prev)
 [gray]  J/K (page) | j/k (row)
 [gray]  gg (start) | G (end)
