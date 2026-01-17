@@ -184,10 +184,24 @@ func (p *MPVPlayer) EventChannel() <-chan *mpv.Event {
 
 // Cleanup performs cleanup operations
 func (p *MPVPlayer) Cleanup() {
-	if p.instance != nil && p.instance.Mpv != nil {
-		p.instance.Command([]string{"quit"})
-		p.instance.TerminateDestroy()
+	if p.instance == nil || p.instance.Mpv == nil {
+		return
 	}
+
+	// Don't call quit command before TerminateDestroy, it can cause issues
+	// TerminateDestroy will properly clean up the MPV instance
+	defer func() {
+		if recover() != nil {
+			// Silently recover from any panic during cleanup
+		}
+	}()
+
+	// Give a small grace period for any pending operations
+	time.Sleep(10 * time.Millisecond)
+
+	// Safely terminate and destroy the MPV instance
+	p.instance.TerminateDestroy()
+	p.instance.Mpv = nil
 }
 
 // createEventListener creates an event listener for MPV events

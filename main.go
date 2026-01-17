@@ -45,7 +45,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to create player: %v", err)
 	}
-	defer plr.Cleanup()
 
 	// Initialize UI
 	app := ui.NewApp(ctx, cfg, lib, plr)
@@ -57,9 +56,14 @@ func main() {
 		<-sigChan
 		log.Println("Received exit signal, cleaning up resources...")
 
-		plr.Cleanup()
+		// Cancel context first to stop event loops and background goroutines
 		cancel()
+		// Give time for context cancellation to propagate
+		time.Sleep(10 * time.Millisecond)
+		// Then stop UI
 		app.Stop()
+		// Finally cleanup player
+		plr.Cleanup()
 
 		go func() {
 			time.Sleep(2 * time.Second)
@@ -77,7 +81,11 @@ func main() {
 
 	// Cleanup
 	log.Println("Program exiting, cleaning up...")
+	// Cancel context first to stop background goroutines
 	cancel()
+	// Give time for context cancellation to propagate
+	time.Sleep(10 * time.Millisecond)
+	// Cleanup player (must come after context cancellation)
 	plr.Cleanup()
 
 	log.Println("Program exit.")
