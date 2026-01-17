@@ -128,6 +128,115 @@ func (a *App) setupInputHandlers() {
 		}
 	})
 
+	a.setupKeyBindings()
+	a.setupGlobalInputHandler()
+}
+
+// setupKeyBindings configures all key bindings in the key binding manager
+func (a *App) setupKeyBindings() {
+	km := a.keyBindings
+
+	// Play/Pause (Space)
+	km.RegisterKeyBinding(
+		KeyAction{name: "togglePlayPause", handler: a.handleSpaceKey},
+		[]tcell.Key{},
+		[]rune{' '}, // Space is a rune
+	)
+
+	// Next song (n, N, l - h is for prev)
+	km.RegisterKeyBinding(
+		KeyAction{name: "nextSong", handler: a.playNextSong},
+		[]tcell.Key{tcell.KeyRight},
+		[]rune{'n', 'N', 'l'},
+	)
+
+	// Previous song (p, P, h)
+	km.RegisterKeyBinding(
+		KeyAction{name: "prevSong", handler: a.playPreviousSong},
+		[]tcell.Key{tcell.KeyLeft},
+		[]rune{'p', 'P', 'h'},
+	)
+
+	// Next page (], >, J)
+	km.RegisterKeyBinding(
+		KeyAction{name: "nextPage", handler: a.nextPage},
+		[]tcell.Key{tcell.KeyPgDn},
+		[]rune{']', '>', 'J'},
+	)
+
+	// Previous page ([, <, K)
+	km.RegisterKeyBinding(
+		KeyAction{name: "prevPage", handler: a.previousPage},
+		[]tcell.Key{tcell.KeyPgUp},
+		[]rune{'[', '<', 'K'},
+	)
+
+	// Move row down (j)
+	km.RegisterKeyBinding(
+		KeyAction{name: "moveRowDown", handler: a.moveRowDown},
+		[]tcell.Key{tcell.KeyDown},
+		[]rune{'j'},
+	)
+
+	// Move row up (k)
+	km.RegisterKeyBinding(
+		KeyAction{name: "moveRowUp", handler: a.moveRowUp},
+		[]tcell.Key{tcell.KeyUp},
+		[]rune{'k'},
+	)
+
+	// Go to first page (gg)
+	km.RegisterKeyBinding(
+		KeyAction{name: "goStart", handler: a.goToFirstPage},
+		[]tcell.Key{},
+		[]rune{'G'}, // Capital G - for 'gg' sequence, see HandleKey logic
+	)
+
+	// Go to last page (G)
+	km.RegisterKeyBinding(
+		KeyAction{name: "goEnd", handler: a.goToLastPage},
+		[]tcell.Key{},
+		[]rune{'G'},
+	)
+
+	// Volume control
+	km.RegisterKeyBinding(
+		KeyAction{name: "volumeUp", handler: a.volumeUp},
+		[]tcell.Key{},
+		[]rune{'+', '='},
+	)
+	km.RegisterKeyBinding(
+		KeyAction{name: "volumeDown", handler: a.volumeDown},
+		[]tcell.Key{},
+		[]rune{'-', '_'},
+	)
+
+	// Search (/)
+	km.RegisterKeyBinding(
+		KeyAction{name: "search", handler: func() {
+			a.tviewApp.SetFocus(a.searchInput)
+		}},
+		[]tcell.Key{},
+		[]rune{'/'},
+	)
+
+	// Help (?)
+	km.RegisterKeyBinding(
+		KeyAction{name: "help", handler: a.showHelp},
+		[]tcell.Key{},
+		[]rune{'?'},
+	)
+
+	// Queue (q, Q)
+	km.RegisterKeyBinding(
+		KeyAction{name: "queue", handler: a.showQueue},
+		[]tcell.Key{},
+		[]rune{'q', 'Q'},
+	)
+}
+
+// setupGlobalInputHandler sets up the global input capture for the application
+func (a *App) setupGlobalInputHandler() {
 	a.tviewApp.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		// Handle modal views first
 		if a.helpView != nil && a.helpView.IsActive() {
@@ -145,67 +254,27 @@ func (a *App) setupInputHandlers() {
 			return event
 		}
 
-		if event.Key() == tcell.KeyRune {
-			switch event.Rune() {
-			case ' ':
-				a.handleSpaceKey()
-				return nil
-			case 'n', 'N':
-				a.playNextSong()
-				return nil
-			case 'p', 'P':
-				a.playPreviousSong()
-				return nil
-			case '/':
-				a.tviewApp.SetFocus(a.searchInput)
-				return nil
-			case '?':
-				a.showHelp()
-				return nil
-			case 'q', 'Q':
-				a.showQueue()
-				return nil
-			case ']', '>':
-				a.nextPage()
-				return nil
-			case '[', '<':
-				a.previousPage()
-				return nil
-			case '+', '=':
-				a.volumeUp()
-				return nil
-			case '-', '_':
-				a.volumeDown()
-				return nil
-			}
+		// Try to handle with key bindings
+		if a.keyBindings.HandleKey(event) {
+			return nil
 		}
 
+		// Handle exit keys (ESC, Ctrl+C)
 		switch event.Key() {
 		case tcell.KeyEsc:
-			// 如果在搜索模式，ESC 先清空搜索
+			// If in search mode, ESC clears search first
 			if a.isSearchMode {
 				a.clearSearch()
 				return nil
 			}
-			// 否则退出程序
+			// Otherwise exit program
 			a.handleExit()
 			return nil
 		case tcell.KeyCtrlC:
 			a.handleExit()
 			return nil
-		case tcell.KeyRight:
-			a.playNextSong()
-			return nil
-		case tcell.KeyLeft:
-			a.playPreviousSong()
-			return nil
-		case tcell.KeyPgDn:
-			a.nextPage()
-			return nil
-		case tcell.KeyPgUp:
-			a.previousPage()
-			return nil
 		}
+
 		return event
 	})
 }

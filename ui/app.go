@@ -18,15 +18,15 @@ import (
 	"github.com/yhkl-dev/NaviCLI/player"
 )
 
-// App represents the TUI application
 type App struct {
-	tviewApp   *tview.Application
-	cfg        *config.Config
-	library    library.Library
-	player     player.Player
-	ctx        context.Context
-	totalSongs []domain.Song
-	state      *domain.PlayerState
+	tviewApp    *tview.Application
+	cfg         *config.Config
+	library     library.Library
+	player      player.Player
+	ctx         context.Context
+	totalSongs  []domain.Song
+	state       *domain.PlayerState
+	keyBindings *KeyBindingManager
 
 	currentPage int
 	pageSize    int
@@ -52,12 +52,12 @@ func NewApp(ctx context.Context, cfg *config.Config, lib library.Library, plr pl
 		player:      plr,
 		ctx:         ctx,
 		state:       domain.NewPlayerState(),
+		keyBindings: NewKeyBindingManager(),
 		pageSize:    cfg.UI.PageSize,
 		currentPage: 1,
 	}
 }
 
-// Run starts the application
 func (a *App) Run() error {
 	a.createHomepage()
 	go a.updateProgressBar()
@@ -69,16 +69,13 @@ func (a *App) Run() error {
 	return a.tviewApp.Run()
 }
 
-// Stop stops the application
 func (a *App) Stop() {
 	if a.tviewApp != nil {
 		a.tviewApp.Stop()
 	}
 }
 
-// loadMusic loads songs from the library
 func (a *App) loadMusic() {
-	// Load enough songs for multiple pages (10x page size for better experience)
 	loadSize := a.cfg.UI.PageSize * 10
 	songs, err := a.library.GetRandomSongs(loadSize)
 	if err != nil {
@@ -102,7 +99,6 @@ func (a *App) loadMusic() {
 	}
 }
 
-// handlePlayerEvents handles MPV player events
 func (a *App) handlePlayerEvents() {
 	defer func() {
 		if r := recover(); r != nil {
@@ -356,6 +352,54 @@ func (a *App) updateStatusWithPageInfo() {
 	}
 
 	a.statusBar.SetText(CreateWelcomeMessage(len(a.totalSongs)) + "\n\n" + pageInfo)
+}
+
+// moveRowDown moves selection down in the song table
+func (a *App) moveRowDown() {
+	row, _ := a.songTable.GetSelection()
+	data := a.getCurrentPageData()
+	if row < len(data)-1 {
+		a.songTable.Select(row+1, 0)
+	} else if row == len(data)-1 && a.currentPage < a.totalPages {
+		// Auto-move to next page when reaching end of current page
+		a.nextPage()
+		a.songTable.Select(0, 0)
+	}
+}
+
+// moveRowUp moves selection up in the song table
+func (a *App) moveRowUp() {
+	row, _ := a.songTable.GetSelection()
+	if row > 0 {
+		a.songTable.Select(row-1, 0)
+	} else if row == 0 && a.currentPage > 1 {
+		// Auto-move to previous page when reaching start of current page
+		a.previousPage()
+		data := a.getCurrentPageData()
+		if len(data) > 0 {
+			a.songTable.Select(len(data)-1, 0)
+		}
+	}
+}
+
+// goToFirstPage moves to the first page
+func (a *App) goToFirstPage() {
+	if a.currentPage != 1 {
+		a.currentPage = 1
+		a.renderSongTable()
+		a.updateStatusWithPageInfo()
+		a.songTable.Select(1, 0) // Skip header row
+	}
+}
+
+// goToLastPage moves to the last page
+func (a *App) goToLastPage() {
+	if a.currentPage != a.totalPages {
+		a.currentPage = a.totalPages
+		a.renderSongTable()
+		a.updateStatusWithPageInfo()
+		a.songTable.Select(1, 0) // Skip header row
+	}
 }
 
 func min(a, b int) int {
