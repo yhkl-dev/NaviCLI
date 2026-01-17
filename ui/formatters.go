@@ -66,10 +66,9 @@ func FormatSongInfo(track domain.Song, index int, status, progressBar string) st
 [gray]Album:  [white]%s %s
 %s
 
-[darkgray] SPACE (pause)
-[darkgray] N/P (next/prev)
-[darkgray] +/- (volume)
-[darkgray] ? (help)`,
+[darkgray] SPACE (pause) | L/H (next/prev)
+[darkgray] j/k (row) J/K (page) gg/G (nav)
+[darkgray] +/- (volume) ? (help)`,
 		index+1, status, FormatDuration(track.Duration), formatStr,
 		float64(track.Size)/1024/1024, techInfo,
 		track.Artist, track.Album, trackNumStr, progressBar)
@@ -102,8 +101,9 @@ func CreateWelcomeMessage(totalSongs int) string {
 [darkgray][favourite]
 
 [gray]Playback:
-[gray]  SPACE (play/pause)
-[gray]  N/P or ←/→ (prev/next)
+[gray]  SPACE (play/pause) | N/P or L/H (next/prev)
+[gray]Navigation (Vim-style):
+[gray]  J/K (page) | j/k (row) | gg (start) | G (end)
 [gray]Features:
 [gray]  / (search) | ? (help) | Q (queue)
 [gray]Select a track to start

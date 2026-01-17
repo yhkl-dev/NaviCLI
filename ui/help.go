@@ -29,18 +29,23 @@ func NewHelpView(app *App) *HelpView {
 [lightgreen]Playback Controls:[-]
   [white]Space[-]       Play/Pause current song
   [white]Enter[-]       Play selected song
-  [white]n / N[-]       Next song
-  [white]p / P[-]       Previous song
-  [white]→[-]           Next song (alternative)
-  [white]←[-]           Previous song (alternative)
+  [white]n / N / l[-]   Next song
+  [white]p / P / h[-]   Previous song
+  [white]→ / ←[-]       Next/Previous song (arrow keys)
   [white]+ / =[-]       Volume up (+5%)
   [white]- / _[-]       Volume down (-5%)
 
-[lightgreen]Navigation:[-]
-  [white]↑ / ↓[-]       Navigate song list
-  [white]< / >[-]       Previous/Next page
-  [white][ / ][-]       Previous/Next page (alternative)
-  [white]PgUp/PgDn[-]   Previous/Next page (alternative)
+[lightgreen]Navigation (Vim-style):[-]
+  [white]j / ↓[-]       Move down in list
+  [white]k / ↑[-]       Move up in list
+  [white]J / PgDn[-]    Next page
+  [white]K / PgUp[-]    Previous page
+  [white]> / ][-]       Next page (alternative)
+  [white]< / [[-]       Previous page (alternative)
+  [white]gg[-]          Go to first page
+  [white]G[-]           Go to last page
+
+[lightgreen]Search & Info:[-]
   [white]/[-]           Open search
   [white]?[-]           Show this help panel
   [white]q / Q[-]       Show playback queue
