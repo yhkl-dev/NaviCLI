@@ -66,9 +66,13 @@ func FormatSongInfo(track domain.Song, index int, status, progressBar string) st
 [gray]Album:  [white]%s %s
 %s
 
-[darkgray] SPACE (pause) | L/H (next/prev)
-[darkgray] j/k (row) J/K (page) gg/G (nav)
-[darkgray] +/- (volume) ? (help)`,
+[darkgray] SPACE (pause)
+[darkgray] L/H (next/prev)
+[darkgray] j/k (row)
+[darkgray] J/K (page)
+[darkgray] gg/G (nav)
+[darkgray] +/- (volume)
+[darkgray] ? (help)`,
 		index+1, status, FormatDuration(track.Duration), formatStr,
 		float64(track.Size)/1024/1024, techInfo,
 		track.Artist, track.Album, trackNumStr, progressBar)
@@ -93,31 +97,24 @@ func CreateProgressBar(progress float64, width int) string {
 // CreateWelcomeMessage creates the welcome screen message
 func CreateWelcomeMessage(totalSongs int) string {
 	return fmt.Sprintf(`
-[white]Current:
-[lightgreen]Welcome to NaviCLI
+[lightgreen] Welcome to NaviCLI
+[darkgray][play] Ready to Play Music!
+[darkgray][source] Source: Navidrome
 
-[darkgray][play] Ready
-[darkgray][source] Navidrome
-[darkgray][favourite]
-
-[gray]Playback:
-[gray]  SPACE (play/pause) | N/P or L/H (next/prev)
-[gray]Navigation (Vim-style):
-[gray]  J/K (page) | j/k (row) | gg (start) | G (end)
-[gray]Features:
-[gray]  / (search) | ? (help) | Q (queue)
-[gray]Select a track to start
-[gray]ESC to exit
-
+[darkgray]task := "[yellow]programming[darkgray]"
 [darkgray][red]func[darkgray] [green]navicli[darkgray]([yellow]task[darkgray] [lightblue]string[darkgray]) [lightblue]string[darkgray] {
-[darkgray]    [red]return[darkgray] "^A series of mixes for listening while" [red]+[darkgray] task [red]+[darkgray] \
+[darkgray]    [red]return[darkgray] "A series of mixes for listening while" [red]+[darkgray] task [red]+[darkgray] \
 [darkgray]         "to focus the brain and i nspire the mind.[darkgray]"
 [darkgray]}
 [darkgray]
-[darkgray]task := "[yellow]programming[darkgray]"
+[gray]  SPACE (play/pause) |
+[gray]  N/P or L/H (next/prev)
+[gray]  J/K (page) | j/k (row)
+[gray]  gg (start) | G (end)
+[gray]  / (search) | ? (help) | Q (queue)
+[gray]  ESC to exit
 
 [darkgray]// %d songs loaded
-[darkgray]// Search, Queue, Help - All ready
 [darkgray]// Written by github.com/yhkl-dev
 [darkgray]// Auto-play next enabled`, totalSongs)
 }
