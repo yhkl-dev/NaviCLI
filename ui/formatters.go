@@ -6,40 +6,33 @@ import (
 	"github.com/yhkl-dev/NaviCLI/domain"
 )
 
-// FormatDuration converts seconds to MM:SS format
 func FormatDuration(seconds int) string {
 	minutes := seconds / 60
 	seconds = seconds % 60
 	return fmt.Sprintf("%02d:%02d", minutes, seconds)
 }
 
-// FormatSongInfo creates a formatted info display for a song
 func FormatSongInfo(track domain.Song, index int, status, progressBar string) string {
-	// 格式化比特率
 	bitRateStr := ""
 	if track.BitRate > 0 {
 		bitRateStr = fmt.Sprintf("%d kbps", track.BitRate)
 	}
 
-	// 格式化文件格式
 	formatStr := track.Suffix
 	if formatStr == "" {
 		formatStr = "unknown"
 	}
 
-	// 格式化曲目编号
 	trackNumStr := ""
 	if track.Track > 0 {
 		trackNumStr = fmt.Sprintf("#%d", track.Track)
 	}
 
-	// 格式化采样率
 	sampleRateStr := ""
 	if track.SampleRate > 0 {
 		sampleRateStr = fmt.Sprintf("%.1f kHz", float64(track.SampleRate)/1000)
 	}
 
-	// 组合技术信息
 	techInfo := ""
 	if bitRateStr != "" {
 		techInfo = bitRateStr
@@ -78,8 +71,6 @@ func FormatSongInfo(track domain.Song, index int, status, progressBar string) st
 		track.Artist, track.Album, trackNumStr, progressBar)
 }
 
-// FormatSongInfoWithCover creates a formatted info display with cover art
-// CreateProgressBar creates a visual progress bar
 func CreateProgressBar(progress float64, width int) string {
 	filledWidth := int(progress * float64(width))
 	var bar string
@@ -94,7 +85,6 @@ func CreateProgressBar(progress float64, width int) string {
 	return bar + fmt.Sprintf("[white] %.1f%%", progress*100)
 }
 
-// CreateWelcomeMessage creates the welcome screen message
 func CreateWelcomeMessage(totalSongs int) string {
 	return fmt.Sprintf(`
 [lightgreen] Welcome to NaviCLI
@@ -119,13 +109,11 @@ func CreateWelcomeMessage(totalSongs int) string {
 [darkgray]// Auto-play next enabled`, totalSongs)
 }
 
-// CreateIdleDisplay creates the idle state display
 func CreateIdleDisplay() string {
 	return `
 [darkgray][invert] [darkgray][fullscreen]`
 }
 
-// CreateProgressText creates the progress time display
 func CreateProgressText(currentTime, totalTime, volumeText string) string {
 	return fmt.Sprintf(`
 [darkgray]%s/%s [darkgray][v-] [white]%s [darkgray][v+] [darkgray][random]`, currentTime, totalTime, volumeText)
