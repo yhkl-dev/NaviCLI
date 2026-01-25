@@ -10,7 +10,6 @@ import (
 	"github.com/yhkl-dev/NaviCLI/domain"
 )
 
-// createHomepage sets up the UI layout
 func (a *App) createHomepage() {
 	a.progressBar = tview.NewTextView().
 		SetDynamicColors(true)
@@ -22,7 +21,6 @@ func (a *App) createHomepage() {
 		SetWrap(true)
 	a.statusBar.SetBorder(false)
 
-	// 创建搜索输入框
 	a.searchInput = tview.NewInputField().
 		SetLabel("[yellow]Search: ").
 		SetFieldWidth(0).
@@ -36,7 +34,6 @@ func (a *App) createHomepage() {
 		SetFixed(1, 0)
 	a.songTable.SetBorder(false)
 
-	// Initialize views
 	a.helpView = NewHelpView(a)
 	a.queueView = NewQueueView(a)
 
@@ -66,7 +63,6 @@ func (a *App) createHomepage() {
 	a.tviewApp.SetRoot(a.rootFlex, true)
 }
 
-// setupTableHeaders sets up the table header row
 func (a *App) setupTableHeaders() {
 	headerStyle := tcell.StyleDefault.Foreground(tcell.ColorGray).Attributes(tcell.AttrBold)
 
@@ -75,11 +71,9 @@ func (a *App) setupTableHeaders() {
 	}
 }
 
-// setupSearchInput sets up the search input field handlers
 func (a *App) setupSearchInput() {
 	a.searchInput.SetChangedFunc(func(text string) {
 		if text == "" && a.isSearchMode {
-			// 清空搜索，恢复原始列表
 			a.clearSearch()
 		}
 	})
@@ -102,7 +96,6 @@ func (a *App) setupSearchInput() {
 			a.tviewApp.SetFocus(a.songTable)
 			return nil
 		}
-		// 按下箭头键时切换到歌曲列表
 		if event.Key() == tcell.KeyDown || event.Key() == tcell.KeyTab {
 			a.tviewApp.SetFocus(a.songTable)
 			return nil
@@ -111,7 +104,6 @@ func (a *App) setupSearchInput() {
 	})
 }
 
-// setupInputHandlers sets up keyboard input handlers
 func (a *App) setupInputHandlers() {
 	a.songTable.SetSelectedFunc(func(row, column int) {
 		if row > 0 {
@@ -132,74 +124,63 @@ func (a *App) setupInputHandlers() {
 	a.setupGlobalInputHandler()
 }
 
-// setupKeyBindings configures all key bindings in the key binding manager
 func (a *App) setupKeyBindings() {
 	km := a.keyBindings
 
-	// Play/Pause (Space)
 	km.RegisterKeyBinding(
 		KeyAction{name: "togglePlayPause", handler: a.handleSpaceKey},
 		[]tcell.Key{},
 		[]rune{' '}, // Space is a rune
 	)
 
-	// Next song (n, N, l - h is for prev)
 	km.RegisterKeyBinding(
 		KeyAction{name: "nextSong", handler: a.playNextSong},
 		[]tcell.Key{tcell.KeyRight},
 		[]rune{'n', 'N', 'l'},
 	)
 
-	// Previous song (p, P, h)
 	km.RegisterKeyBinding(
 		KeyAction{name: "prevSong", handler: a.playPreviousSong},
 		[]tcell.Key{tcell.KeyLeft},
 		[]rune{'p', 'P', 'h'},
 	)
 
-	// Next page (], >, J)
 	km.RegisterKeyBinding(
 		KeyAction{name: "nextPage", handler: a.nextPage},
 		[]tcell.Key{tcell.KeyPgDn},
 		[]rune{']', '>', 'J'},
 	)
 
-	// Previous page ([, <, K)
 	km.RegisterKeyBinding(
 		KeyAction{name: "prevPage", handler: a.previousPage},
 		[]tcell.Key{tcell.KeyPgUp},
 		[]rune{'[', '<', 'K'},
 	)
 
-	// Move row down (j)
 	km.RegisterKeyBinding(
 		KeyAction{name: "moveRowDown", handler: a.moveRowDown},
 		[]tcell.Key{tcell.KeyDown},
 		[]rune{'j'},
 	)
 
-	// Move row up (k)
 	km.RegisterKeyBinding(
 		KeyAction{name: "moveRowUp", handler: a.moveRowUp},
 		[]tcell.Key{tcell.KeyUp},
 		[]rune{'k'},
 	)
 
-	// Go to first page (gg)
 	km.RegisterKeyBinding(
 		KeyAction{name: "goStart", handler: a.goToFirstPage},
 		[]tcell.Key{},
 		[]rune{'G'}, // Capital G - for 'gg' sequence, see HandleKey logic
 	)
 
-	// Go to last page (G)
 	km.RegisterKeyBinding(
 		KeyAction{name: "goEnd", handler: a.goToLastPage},
 		[]tcell.Key{},
 		[]rune{'G'},
 	)
 
-	// Volume control
 	km.RegisterKeyBinding(
 		KeyAction{name: "volumeUp", handler: a.volumeUp},
 		[]tcell.Key{},
@@ -211,7 +192,6 @@ func (a *App) setupKeyBindings() {
 		[]rune{'-', '_'},
 	)
 
-	// Search (/)
 	km.RegisterKeyBinding(
 		KeyAction{name: "search", handler: func() {
 			a.tviewApp.SetFocus(a.searchInput)
@@ -220,14 +200,12 @@ func (a *App) setupKeyBindings() {
 		[]rune{'/'},
 	)
 
-	// Help (?)
 	km.RegisterKeyBinding(
 		KeyAction{name: "help", handler: a.showHelp},
 		[]tcell.Key{},
 		[]rune{'?'},
 	)
 
-	// Queue (q, Q)
 	km.RegisterKeyBinding(
 		KeyAction{name: "queue", handler: a.showQueue},
 		[]tcell.Key{},
@@ -235,10 +213,8 @@ func (a *App) setupKeyBindings() {
 	)
 }
 
-// setupGlobalInputHandler sets up the global input capture for the application
 func (a *App) setupGlobalInputHandler() {
 	a.tviewApp.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-		// Handle modal views first
 		if a.helpView != nil && a.helpView.IsActive() {
 			if event.Key() == tcell.KeyEscape || event.Rune() == '?' {
 				a.helpView.Close()
@@ -254,7 +230,6 @@ func (a *App) setupGlobalInputHandler() {
 			return event
 		}
 
-		// Try to handle with key bindings
 		if a.keyBindings.HandleKey(event) {
 			return nil
 		}
@@ -262,12 +237,10 @@ func (a *App) setupGlobalInputHandler() {
 		// Handle exit keys (ESC, Ctrl+C)
 		switch event.Key() {
 		case tcell.KeyEsc:
-			// If in search mode, ESC clears search first
 			if a.isSearchMode {
 				a.clearSearch()
 				return nil
 			}
-			// Otherwise exit program
 			a.handleExit()
 			return nil
 		case tcell.KeyCtrlC:
@@ -279,7 +252,6 @@ func (a *App) setupGlobalInputHandler() {
 	})
 }
 
-// handleSpaceKey handles the space key press (play/pause toggle)
 func (a *App) handleSpaceKey() {
 	go func() {
 		defer func() {
@@ -292,23 +264,19 @@ func (a *App) handleSpaceKey() {
 			return
 		}
 
-		// 切换暂停状态
 		_, err := a.player.Pause()
 		if err != nil {
 			return
 		}
 
-		// 获取实际的播放状态
 		isPaused, err := a.player.IsPaused()
 		if err != nil {
 			return
 		}
 
-		// 更新应用状态（注意：isPaused=true 表示暂停，isPlaying应该是false）
 		newPlayingState := !isPaused
 		a.state.SetPlaying(newPlayingState)
 
-		// 立即更新显示，使用与 updateProgressBar 相同的逻辑
 		if newPlayingState {
 			a.updatePlayingDisplay(currentSong, currentIndex)
 		} else {
@@ -317,7 +285,6 @@ func (a *App) handleSpaceKey() {
 	}()
 }
 
-// handleExit handles the exit signal
 func (a *App) handleExit() {
 	if a.player != nil {
 		a.player.Cleanup()
@@ -331,10 +298,8 @@ func (a *App) handleExit() {
 	}()
 }
 
-// performSearch executes search and updates the table
 func (a *App) performSearch(query string) {
 	if !a.isSearchMode {
-		// 保存原始列表
 		a.originalSongs = make([]domain.Song, len(a.totalSongs))
 		copy(a.originalSongs, a.totalSongs)
 		a.isSearchMode = true
@@ -365,7 +330,6 @@ func (a *App) performSearch(query string) {
 	}()
 }
 
-// clearSearch clears search and restores original list
 func (a *App) clearSearch() {
 	if a.isSearchMode {
 		a.totalSongs = a.originalSongs
@@ -380,7 +344,6 @@ func (a *App) clearSearch() {
 	a.searchInput.SetFieldBackgroundColor(tcell.ColorDefault)
 }
 
-// renderSongTable renders the song table with current page data
 func (a *App) renderSongTable() {
 	for i := a.songTable.GetRowCount() - 1; i > 0; i-- {
 		a.songTable.RemoveRow(i)
@@ -440,7 +403,6 @@ func (a *App) renderSongTable() {
 	a.songTable.ScrollToBeginning()
 }
 
-// updateProgressBar continuously updates the progress bar display
 func (a *App) updateProgressBar() {
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
@@ -478,7 +440,6 @@ func (a *App) updateProgressBar() {
 	}
 }
 
-// updateIdleDisplay updates the display for idle state
 func (a *App) updateIdleDisplay() {
 	a.tviewApp.QueueUpdateDraw(func() {
 		if a.progressBar != nil {
@@ -487,11 +448,9 @@ func (a *App) updateIdleDisplay() {
 	})
 }
 
-// updatePausedDisplay updates the display for paused state
 func (a *App) updatePausedDisplay(song *domain.Song, index int) {
 	a.tviewApp.QueueUpdateDraw(func() {
 		if a.progressBar != nil && a.statusBar != nil {
-			// 获取当前播放进度
 			currentPos, totalDuration, err := a.player.GetProgress()
 			if err != nil || totalDuration <= 0 {
 				totalDuration = float64(song.Duration)
@@ -524,7 +483,6 @@ func (a *App) updatePausedDisplay(song *domain.Song, index int) {
 	})
 }
 
-// updatePlayingDisplay updates the display for playing state
 func (a *App) updatePlayingDisplay(song *domain.Song, index int) {
 	defer func() {
 		if recover() != nil {
@@ -564,19 +522,16 @@ func (a *App) updatePlayingDisplay(song *domain.Song, index int) {
 			a.progressBar.SetText(progressText)
 		}
 		if a.statusBar != nil {
-			// 使用带封面的格式，如果有封面的话
 			a.statusBar.SetText(FormatSongInfo(*song, index, playingStatus, progressBar))
 		}
 	})
 }
 
-// showHelp displays the help modal view
 func (a *App) showHelp() {
 	if a.helpView == nil {
 		return
 	}
 
-	// Create modal container
 	modal := tview.NewFlex().
 		SetDirection(tview.FlexRow).
 		AddItem(nil, 0, 1, false).
@@ -587,18 +542,15 @@ func (a *App) showHelp() {
 			AddItem(nil, 0, 1, false), 20, 0, true).
 		AddItem(nil, 0, 1, false)
 
-	// Add modal to root
 	a.tviewApp.SetRoot(modal, true)
 	a.helpView.Show()
 }
 
-// showQueue displays the queue modal view
 func (a *App) showQueue() {
 	if a.queueView == nil {
 		return
 	}
 
-	// Create modal container
 	modal := tview.NewFlex().
 		SetDirection(tview.FlexRow).
 		AddItem(nil, 0, 1, false).
@@ -609,7 +561,6 @@ func (a *App) showQueue() {
 			AddItem(nil, 0, 1, false), 20, 0, true).
 		AddItem(nil, 0, 1, false)
 
-	// Add modal to root
 	a.tviewApp.SetRoot(modal, true)
 	a.queueView.Show()
 }

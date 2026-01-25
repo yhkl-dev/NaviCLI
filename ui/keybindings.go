@@ -4,27 +4,23 @@ import (
 	"github.com/gdamore/tcell/v2"
 )
 
-// KeyAction represents an action that can be triggered by keybindings
 type KeyAction struct {
 	name    string
 	handler func()
 }
 
-// KeyBinding maps a set of keys to a single action
 type KeyBinding struct {
 	action KeyAction
 	keys   []tcell.Key // for special keys like arrows, pgdn, etc.
 	runes  []rune      // for character keys
 }
 
-// KeyBindingManager manages all keybindings and dispatches events
 type KeyBindingManager struct {
 	bindings map[tcell.Key]KeyAction // special key -> action mapping
 	runeMap  map[rune]KeyAction      // rune -> action mapping
 	pending  string                  // pending key sequence for multi-key bindings like 'gg'
 }
 
-// NewKeyBindingManager creates a new key binding manager
 func NewKeyBindingManager() *KeyBindingManager {
 	return &KeyBindingManager{
 		bindings: make(map[tcell.Key]KeyAction),
@@ -33,7 +29,6 @@ func NewKeyBindingManager() *KeyBindingManager {
 	}
 }
 
-// RegisterKeyBinding registers a single key binding
 func (km *KeyBindingManager) RegisterKeyBinding(action KeyAction, keys []tcell.Key, runes []rune) {
 	for _, key := range keys {
 		km.bindings[key] = action
@@ -43,7 +38,6 @@ func (km *KeyBindingManager) RegisterKeyBinding(action KeyAction, keys []tcell.K
 	}
 }
 
-// HandleKey handles a keyboard event and returns true if it was consumed
 func (km *KeyBindingManager) HandleKey(event *tcell.EventKey) bool {
 	// Check for special keys first
 	if event.Key() != tcell.KeyRune {
@@ -56,20 +50,16 @@ func (km *KeyBindingManager) HandleKey(event *tcell.EventKey) bool {
 		return false
 	}
 
-	// Handle rune keys
 	r := event.Rune()
 
-	// Handle 'g' prefix for multi-key sequences
 	if km.pending == "g" {
 		km.pending = ""
-		// 'gg' sequence - go to first page
 		if r == 'g' {
 			if action, ok := km.runeMap['G']; ok && action.name == "goStart" {
 				action.handler()
 				return true
 			}
 		}
-		// Not a complete sequence, try current rune as standalone
 		if action, ok := km.runeMap[r]; ok {
 			action.handler()
 			return true
@@ -77,13 +67,11 @@ func (km *KeyBindingManager) HandleKey(event *tcell.EventKey) bool {
 		return false
 	}
 
-	// Start potential sequence with 'g'
 	if r == 'g' {
 		km.pending = "g"
 		return true
 	}
 
-	// Single character binding
 	if action, ok := km.runeMap[r]; ok {
 		km.pending = ""
 		action.handler()
@@ -94,7 +82,6 @@ func (km *KeyBindingManager) HandleKey(event *tcell.EventKey) bool {
 	return false
 }
 
-// ResetPending resets the pending key sequence
 func (km *KeyBindingManager) ResetPending() {
 	km.pending = ""
 }

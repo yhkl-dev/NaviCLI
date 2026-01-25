@@ -9,7 +9,6 @@ import (
 func TestKeyBindingManager(t *testing.T) {
 	km := NewKeyBindingManager()
 
-	// Test single key binding
 	handledSpace := false
 	km.RegisterKeyBinding(
 		KeyAction{
@@ -28,7 +27,6 @@ func TestKeyBindingManager(t *testing.T) {
 		t.Errorf("Expected handler to be called")
 	}
 
-	// Test 'g' prefix sequence
 	goStartCalled := false
 	km.RegisterKeyBinding(
 		KeyAction{
@@ -39,7 +37,6 @@ func TestKeyBindingManager(t *testing.T) {
 		[]rune{'G'},
 	)
 
-	// First 'g' should be pending
 	event1 := tcell.NewEventKey(tcell.KeyRune, 'g', tcell.ModNone)
 	if !km.HandleKey(event1) {
 		t.Errorf("Expected first 'g' to be consumed")
@@ -48,7 +45,6 @@ func TestKeyBindingManager(t *testing.T) {
 		t.Errorf("Handler should not be called yet")
 	}
 
-	// Second 'g' should trigger goStart
 	event2 := tcell.NewEventKey(tcell.KeyRune, 'g', tcell.ModNone)
 	if !km.HandleKey(event2) {
 		t.Errorf("Expected second 'g' (gg sequence) to be handled")

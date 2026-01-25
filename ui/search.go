@@ -8,7 +8,6 @@ import (
 	"github.com/yhkl-dev/NaviCLI/domain"
 )
 
-// SearchView represents the search interface
 type SearchView struct {
 	app         *App
 	container   *tview.Flex
@@ -18,7 +17,6 @@ type SearchView struct {
 	isActive    bool
 }
 
-// NewSearchView creates a new search view
 func NewSearchView(app *App) *SearchView {
 	sv := &SearchView{
 		app:     app,
@@ -57,19 +55,16 @@ func NewSearchView(app *App) *SearchView {
 			return nil
 		}
 
-		// 获取当前选中的行
 		row, _ := sv.resultTable.GetSelection()
 		if row > 0 && row-1 < len(sv.results) {
 			song := sv.results[row-1]
 
-			// Enter - 立即播放
 			if event.Key() == tcell.KeyEnter {
 				sv.playSong(song)
 				sv.Close()
 				return nil
 			}
 
-			// N - 添加到下一首播放
 			if event.Rune() == 'n' || event.Rune() == 'N' {
 				sv.playNext(song)
 				sv.Close()
@@ -80,7 +75,6 @@ func NewSearchView(app *App) *SearchView {
 		return event
 	})
 
-	// Setup header
 	headerStyle := tcell.StyleDefault.Foreground(tcell.ColorYellow).Attributes(tcell.AttrBold)
 	sv.resultTable.SetCell(0, 0, tview.NewTableCell("#").SetStyle(headerStyle))
 	sv.resultTable.SetCell(0, 1, tview.NewTableCell("Title").SetStyle(headerStyle))
@@ -97,7 +91,6 @@ func NewSearchView(app *App) *SearchView {
 		SetTitle(" Search [ENTER: Play | N: Play Next | ESC: Close] ").
 		SetBorderColor(tcell.ColorGreen)
 
-	// Capture ESC at container level to ensure it works regardless of focus
 	sv.container.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		if event.Key() == tcell.KeyEscape {
 			sv.Close()
@@ -109,13 +102,11 @@ func NewSearchView(app *App) *SearchView {
 	return sv
 }
 
-// Show displays the search view
 func (sv *SearchView) Show() {
 	sv.isActive = true
 	sv.app.tviewApp.SetFocus(sv.inputField)
 }
 
-// Close hides the search view
 func (sv *SearchView) Close() {
 	sv.isActive = false
 	sv.inputField.SetText("")
@@ -125,17 +116,14 @@ func (sv *SearchView) Close() {
 	sv.app.tviewApp.SetFocus(sv.app.songTable)
 }
 
-// IsActive returns whether the search view is active
 func (sv *SearchView) IsActive() bool {
 	return sv.isActive
 }
 
-// GetContainer returns the search view container
 func (sv *SearchView) GetContainer() *tview.Flex {
 	return sv.container
 }
 
-// performSearch executes the search query
 func (sv *SearchView) performSearch() {
 	query := sv.inputField.GetText()
 	if query == "" {
@@ -159,9 +147,7 @@ func (sv *SearchView) performSearch() {
 	}()
 }
 
-// displayResults renders the search results in the table
 func (sv *SearchView) displayResults() {
-	// Clear previous results
 	sv.clearResults()
 
 	if len(sv.results) == 0 {
@@ -207,14 +193,12 @@ func (sv *SearchView) displayResults() {
 		Foreground(tcell.ColorWhite))
 }
 
-// clearResults clears the result table
 func (sv *SearchView) clearResults() {
 	for i := sv.resultTable.GetRowCount() - 1; i > 0; i-- {
 		sv.resultTable.RemoveRow(i)
 	}
 }
 
-// showError displays an error message
 func (sv *SearchView) showError(message string) {
 	sv.clearResults()
 	sv.resultTable.SetCell(1, 0, tview.NewTableCell(message).
@@ -223,9 +207,7 @@ func (sv *SearchView) showError(message string) {
 		SetExpansion(5))
 }
 
-// playSong plays the selected song from search results
 func (sv *SearchView) playSong(song domain.Song) {
-	// Find song index in total songs, or add to end
 	index := -1
 	for i, s := range sv.app.totalSongs {
 		if s.ID == song.ID {
@@ -235,7 +217,6 @@ func (sv *SearchView) playSong(song domain.Song) {
 	}
 
 	if index == -1 {
-		// Song not in current list, add it
 		sv.app.totalSongs = append(sv.app.totalSongs, song)
 		index = len(sv.app.totalSongs) - 1
 	}
@@ -243,9 +224,7 @@ func (sv *SearchView) playSong(song domain.Song) {
 	sv.app.playSongAtIndex(index)
 }
 
-// playNext adds the selected song to play next (after current song)
 func (sv *SearchView) playNext(song domain.Song) {
-	// Check if song already exists in list
 	existingIndex := -1
 	for i, s := range sv.app.totalSongs {
 		if s.ID == song.ID {
@@ -254,31 +233,24 @@ func (sv *SearchView) playNext(song domain.Song) {
 		}
 	}
 
-	// Get current playing index
 	_, currentIndex, _, _ := sv.app.state.GetState()
 
-	// If song already exists, remove it first
 	if existingIndex != -1 {
 		sv.app.totalSongs = append(sv.app.totalSongs[:existingIndex], sv.app.totalSongs[existingIndex+1:]...)
-		// Adjust currentIndex if necessary
 		if existingIndex <= currentIndex {
 			currentIndex--
 		}
 	}
 
-	// Insert after current song
 	insertPos := currentIndex + 1
 	if insertPos > len(sv.app.totalSongs) {
 		insertPos = len(sv.app.totalSongs)
 	}
 
-	// Insert song at position
 	sv.app.totalSongs = append(sv.app.totalSongs[:insertPos], append([]domain.Song{song}, sv.app.totalSongs[insertPos:]...)...)
 
-	// Update total pages
 	sv.app.totalPages = (len(sv.app.totalSongs) + sv.app.pageSize - 1) / sv.app.pageSize
 
-	// Refresh the display
 	sv.app.tviewApp.QueueUpdateDraw(func() {
 		sv.app.renderSongTable()
 		sv.app.updateStatusWithPageInfo()

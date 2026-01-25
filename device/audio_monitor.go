@@ -132,7 +132,6 @@ func (m *AudioMonitor) monitorLoop() {
 	}
 }
 
-// getCurrentAudioDevice returns the current audio output device on macOS
 func (m *AudioMonitor) getCurrentAudioDevice() *AudioDeviceInfo {
 	if !m.supported {
 		return nil
@@ -143,7 +142,6 @@ func (m *AudioMonitor) getCurrentAudioDevice() *AudioDeviceInfo {
 		return info
 	}
 
-	// Fallback: try using CoreAudio via AppleScript / system prefs
 	return m.getAudioDeviceViaOsascript()
 }
 
@@ -152,12 +150,10 @@ func (m *AudioMonitor) getAudioDeviceViaOsascript() *AudioDeviceInfo {
 		return nil
 	}
 
-	// Get the current output device name using AppleScript
 	script := `do shell script "SwitchAudioSource -c 2>/dev/null || echo 'unknown'"`
 	cmd := exec.Command("osascript", "-e", script)
 	output, err := cmd.Output()
 	if err != nil {
-		// Another fallback: check system preferences
 		return m.getAudioDeviceViaSystemPrefs()
 	}
 
@@ -222,10 +218,8 @@ func selectCurrentDevice(records []audioDeviceRecord) *AudioDeviceInfo {
 	return fallback
 }
 
-// extractDeviceName extracts device name from ioreg output
 func extractDeviceName(output string) string {
 	output = strings.TrimSpace(output)
-	// Look for quoted string after "IOAudioEngineDescription"
 	if idx := strings.Index(output, "="); idx != -1 {
 		name := strings.TrimSpace(output[idx+1:])
 		name = strings.Trim(name, `"`)
@@ -234,7 +228,6 @@ func extractDeviceName(output string) string {
 	return "Unknown"
 }
 
-// detectDeviceType determines the device type from its name
 func detectDeviceType(name, transport string) AudioDeviceType {
 	nameLower := strings.ToLower(strings.TrimSpace(name))
 	transportLower := strings.ToLower(strings.TrimSpace(transport))
@@ -252,7 +245,6 @@ func detectDeviceType(name, transport string) AudioDeviceType {
 		return AudioDeviceHeadphones
 	}
 
-	// Bluetooth devices detected by name
 	if strings.Contains(nameLower, "bluetooth") ||
 		strings.Contains(nameLower, "airpods") ||
 		strings.Contains(nameLower, "beats") ||
@@ -268,7 +260,6 @@ func detectDeviceType(name, transport string) AudioDeviceType {
 		return AudioDeviceBluetooth
 	}
 
-	// Built-in speakers by name
 	if strings.Contains(nameLower, "built-in") ||
 		strings.Contains(nameLower, "internal") ||
 		strings.Contains(nameLower, "macbook") ||
@@ -279,21 +270,18 @@ func detectDeviceType(name, transport string) AudioDeviceType {
 		return AudioDeviceBuiltIn
 	}
 
-	// USB devices by name
 	if strings.Contains(nameLower, "usb") ||
 		strings.Contains(nameLower, "dac") ||
 		strings.Contains(nameLower, "audio interface") {
 		return AudioDeviceUSB
 	}
 
-	// HDMI by name
 	if strings.Contains(nameLower, "hdmi") ||
 		strings.Contains(nameLower, "displayport") ||
 		strings.Contains(nameLower, "display audio") {
 		return AudioDeviceHDMI
 	}
 
-	// Headphones (wired)
 	if strings.Contains(nameLower, "headphone") ||
 		strings.Contains(nameLower, "headset") ||
 		strings.Contains(nameLower, "external headphones") {
@@ -303,7 +291,6 @@ func detectDeviceType(name, transport string) AudioDeviceType {
 	return AudioDeviceUnknown
 }
 
-// isExternalDevice returns true if the device type is external (not built-in)
 func isExternalDevice(deviceType AudioDeviceType) bool {
 	return deviceType == AudioDeviceBluetooth ||
 		deviceType == AudioDeviceUSB ||
@@ -473,7 +460,6 @@ func getAllConnectedExternalDevices(records []audioDeviceRecord) map[string]bool
 func isExternalDeviceName(name string) bool {
 	nameLower := strings.ToLower(name)
 
-	// External device indicators
 	if strings.Contains(nameLower, "bluetooth") ||
 		strings.Contains(nameLower, "airpods") ||
 		strings.Contains(nameLower, "beats") ||

@@ -5,7 +5,6 @@ import (
 	"github.com/rivo/tview"
 )
 
-// HelpView represents the keyboard shortcuts help interface
 type HelpView struct {
 	app       *App
 	container *tview.Flex
@@ -13,7 +12,6 @@ type HelpView struct {
 	isActive  bool
 }
 
-// NewHelpView creates a new help view
 func NewHelpView(app *App) *HelpView {
 	hv := &HelpView{
 		app: app,
@@ -70,25 +68,21 @@ func NewHelpView(app *App) *HelpView {
 	return hv
 }
 
-// Show displays the help view
 func (hv *HelpView) Show() {
 	hv.isActive = true
 	hv.app.tviewApp.SetFocus(hv.textView)
 }
 
-// Close hides the help view
 func (hv *HelpView) Close() {
 	hv.isActive = false
 	hv.app.tviewApp.SetRoot(hv.app.rootFlex, true)
 	hv.app.tviewApp.SetFocus(hv.app.songTable)
 }
 
-// IsActive returns whether the help view is active
 func (hv *HelpView) IsActive() bool {
 	return hv.isActive
 }
 
-// GetContainer returns the help view container
 func (hv *HelpView) GetContainer() *tview.Flex {
 	return hv.container
 }
