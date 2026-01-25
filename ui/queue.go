@@ -7,7 +7,6 @@ import (
 	"github.com/rivo/tview"
 )
 
-// QueueView represents the playback queue interface
 type QueueView struct {
 	app       *App
 	container *tview.Flex
@@ -15,7 +14,6 @@ type QueueView struct {
 	isActive  bool
 }
 
-// NewQueueView creates a new queue view
 func NewQueueView(app *App) *QueueView {
 	qv := &QueueView{
 		app: app,

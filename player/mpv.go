@@ -10,12 +10,10 @@ import (
 	"github.com/yhkl-dev/NaviCLI/mpvplayer"
 )
 
-// MPVPlayer implements the Player interface using MPV media player
 type MPVPlayer struct {
 	instance *mpvplayer.Mpvplayer
 }
 
-// NewMPVPlayer creates a new MPVPlayer instance
 func NewMPVPlayer(ctx context.Context) (*MPVPlayer, error) {
 	mpvInstance, err := mpvplayer.CreateMPVInstance()
 	if err != nil {
@@ -34,7 +32,6 @@ func NewMPVPlayer(ctx context.Context) (*MPVPlayer, error) {
 	return player, nil
 }
 
-// Play starts playback of the given URL
 func (p *MPVPlayer) Play(url string) error {
 	if p.instance == nil || p.instance.Mpv == nil {
 		return fmt.Errorf("MPV instance not initialized")
@@ -43,7 +40,6 @@ func (p *MPVPlayer) Play(url string) error {
 	return nil
 }
 
-// Pause toggles the pause state
 func (p *MPVPlayer) Pause() (int, error) {
 	if p.instance == nil {
 		return PlayerError, fmt.Errorf("MPV instance not initialized")
@@ -51,7 +47,6 @@ func (p *MPVPlayer) Pause() (int, error) {
 	return p.instance.Pause()
 }
 
-// Stop stops playback
 func (p *MPVPlayer) Stop() error {
 	if p.instance == nil || p.instance.Mpv == nil {
 		return fmt.Errorf("MPV instance not initialized")
@@ -59,7 +54,6 @@ func (p *MPVPlayer) Stop() error {
 	return p.instance.Stop()
 }
 
-// GetProgress returns the current playback position and total duration
 func (p *MPVPlayer) GetProgress() (currentPos, totalDuration float64, err error) {
 	if p.instance == nil || p.instance.Mpv == nil {
 		return 0, 0, fmt.Errorf("MPV instance not initialized")
@@ -77,7 +71,6 @@ func (p *MPVPlayer) GetProgress() (currentPos, totalDuration float64, err error)
 	return pos.(float64), duration.(float64), nil
 }
 
-// GetVolume returns the current volume level
 func (p *MPVPlayer) GetVolume() (float64, error) {
 	if p.instance == nil {
 		return 0, fmt.Errorf("MPV instance not initialized")
@@ -85,25 +78,19 @@ func (p *MPVPlayer) GetVolume() (float64, error) {
 	return p.instance.GetVolume()
 }
 
-// SetVolume sets the volume level (0-100)
 func (p *MPVPlayer) SetVolume(volume float64) error {
 	if p.instance == nil {
 		return fmt.Errorf("MPV instance not initialized")
 	}
-	// 限制音量范围
 	if volume < 0 {
 		volume = 0
 	} else if volume > 100 {
 		volume = 100
 	}
-	// 使用 MPV 命令设置音量
 	return p.instance.Command([]string{"set", "volume", fmt.Sprintf("%.0f", volume)})
 }
 
-// IsPlaying returns whether audio is currently playing (not implemented in base mpvplayer)
 func (p *MPVPlayer) IsPlaying() bool {
-	// This would need to check the actual MPV state
-	// For now, delegate to IsPaused
 	paused, err := p.IsPaused()
 	if err != nil {
 		return false
@@ -115,7 +102,6 @@ func (p *MPVPlayer) IsPlaying() bool {
 	return loaded && !paused
 }
 
-// IsPaused returns whether playback is paused
 func (p *MPVPlayer) IsPaused() (bool, error) {
 	if p.instance == nil {
 		return false, fmt.Errorf("MPV instance not initialized")
@@ -123,7 +109,6 @@ func (p *MPVPlayer) IsPaused() (bool, error) {
 	return p.instance.IsPaused()
 }
 
-// IsSongLoaded returns whether a song is loaded
 func (p *MPVPlayer) IsSongLoaded() (bool, error) {
 	if p.instance == nil {
 		return false, fmt.Errorf("MPV instance not initialized")
@@ -131,7 +116,6 @@ func (p *MPVPlayer) IsSongLoaded() (bool, error) {
 	return p.instance.IsSongLoaded()
 }
 
-// AddToQueue adds an item to the playback queue
 func (p *MPVPlayer) AddToQueue(item domain.QueueItem) {
 	if p.instance == nil {
 		return
@@ -145,7 +129,6 @@ func (p *MPVPlayer) AddToQueue(item domain.QueueItem) {
 	})
 }
 
-// GetQueue returns the current playback queue
 func (p *MPVPlayer) GetQueue() []domain.QueueItem {
 	if p.instance == nil {
 		return []domain.QueueItem{}
@@ -164,7 +147,6 @@ func (p *MPVPlayer) GetQueue() []domain.QueueItem {
 	return queue
 }
 
-// ClearQueue clears the playback queue
 func (p *MPVPlayer) ClearQueue() {
 	if p.instance == nil {
 		return
@@ -172,7 +154,6 @@ func (p *MPVPlayer) ClearQueue() {
 	p.instance.Queue = make([]mpvplayer.QueueItem, 0)
 }
 
-// EventChannel returns the event channel
 func (p *MPVPlayer) EventChannel() <-chan *mpv.Event {
 	if p.instance == nil {
 		ch := make(chan *mpv.Event)
@@ -182,29 +163,22 @@ func (p *MPVPlayer) EventChannel() <-chan *mpv.Event {
 	return p.instance.EventChannel
 }
 
-// Cleanup performs cleanup operations
 func (p *MPVPlayer) Cleanup() {
 	if p.instance == nil || p.instance.Mpv == nil {
 		return
 	}
 
-	// Don't call quit command before TerminateDestroy, it can cause issues
-	// TerminateDestroy will properly clean up the MPV instance
 	defer func() {
 		if recover() != nil {
-			// Silently recover from any panic during cleanup
 		}
 	}()
 
-	// Give a small grace period for any pending operations
 	time.Sleep(10 * time.Millisecond)
 
-	// Safely terminate and destroy the MPV instance
 	p.instance.TerminateDestroy()
 	p.instance.Mpv = nil
 }
 
-// createEventListener creates an event listener for MPV events
 func createEventListener(ctx context.Context, m *mpv.Mpv) chan *mpv.Event {
 	c := make(chan *mpv.Event)
 	go func() {

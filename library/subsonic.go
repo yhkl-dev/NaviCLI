@@ -7,19 +7,16 @@ import (
 	"github.com/yhkl-dev/NaviCLI/subsonic"
 )
 
-// SubsonicLibrary implements the Library interface using Subsonic API
 type SubsonicLibrary struct {
 	client *subsonic.Client
 }
 
-// NewSubsonicLibrary creates a new SubsonicLibrary instance
 func NewSubsonicLibrary(client *subsonic.Client) *SubsonicLibrary {
 	return &SubsonicLibrary{
 		client: client,
 	}
 }
 
-// GetRandomSongs retrieves random songs from the Subsonic server
 func (s *SubsonicLibrary) GetRandomSongs(count int) ([]domain.Song, error) {
 	songs, err := s.client.GetRandomSongs(count)
 	if err != nil {
@@ -28,7 +25,6 @@ func (s *SubsonicLibrary) GetRandomSongs(count int) ([]domain.Song, error) {
 	return convertToDomainSongs(songs), nil
 }
 
-// SearchSongs searches for songs on the Subsonic server
 func (s *SubsonicLibrary) SearchSongs(query string, limit int) ([]domain.Song, error) {
 	songs, err := s.client.SearchSongs(query)
 	if err != nil {
@@ -37,22 +33,18 @@ func (s *SubsonicLibrary) SearchSongs(query string, limit int) ([]domain.Song, e
 	return convertToDomainSongs(songs), nil
 }
 
-// GetPlayURL returns the streaming URL for a song
 func (s *SubsonicLibrary) GetPlayURL(songID string) string {
 	return s.client.GetPlayURL(songID)
 }
 
-// GetCoverArtURL returns the URL for album cover art
 func (s *SubsonicLibrary) GetCoverArtURL(coverArtID string) string {
 	return s.client.GetCoverArtURL(coverArtID)
 }
 
-// Ping verifies connectivity to the Subsonic server
 func (s *SubsonicLibrary) Ping() error {
 	return s.client.GetServerInfo()
 }
 
-// convertToDomainSongs converts subsonic.Song slice to domain.Song slice
 func convertToDomainSongs(songs []subsonic.Song) []domain.Song {
 	domainSongs := make([]domain.Song, len(songs))
 	for i, song := range songs {
@@ -61,7 +53,6 @@ func convertToDomainSongs(songs []subsonic.Song) []domain.Song {
 	return domainSongs
 }
 
-// convertToDomainSong converts a subsonic.Song to domain.Song
 func convertToDomainSong(song subsonic.Song) domain.Song {
 	var played *time.Time
 	if !song.Played.IsZero() {
