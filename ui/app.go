@@ -13,6 +13,7 @@ import (
 	"github.com/rivo/tview"
 	"github.com/wildeyedskies/go-mpv/mpv"
 	"github.com/yhkl-dev/NaviCLI/config"
+	"github.com/yhkl-dev/NaviCLI/device"
 	"github.com/yhkl-dev/NaviCLI/domain"
 	"github.com/yhkl-dev/NaviCLI/library"
 	"github.com/yhkl-dev/NaviCLI/player"
@@ -40,10 +41,10 @@ type App struct {
 	helpView      *HelpView
 	queueView     *QueueView
 	isSearchMode  bool
-	originalSongs []domain.Song // 保存搜索前的歌曲列表
+	originalSongs []domain.Song
+	audioMonitor  *device.AudioMonitor
 }
 
-// NewApp creates a new TUI application with dependency injection
 func NewApp(ctx context.Context, cfg *config.Config, lib library.Library, plr player.Player) *App {
 	return &App{
 		tviewApp:    tview.NewApplication(),
@@ -64,6 +65,7 @@ func (a *App) Run() error {
 	go a.loadMusic()
 	go a.handlePlayerEvents()
 	go a.handleTerminalResize()
+	a.startAudioMonitor()
 
 	log.Println("start navicli...")
 	return a.tviewApp.Run()
@@ -124,7 +126,6 @@ func (a *App) handlePlayerEvents() {
 	}
 }
 
-// handleTerminalResize handles terminal resize events
 func (a *App) handleTerminalResize() {
 	lastWidth := 0
 	ticker := time.NewTicker(500 * time.Millisecond)
@@ -151,7 +152,6 @@ func (a *App) handleTerminalResize() {
 	}
 }
 
-// getTerminalWidth returns the current terminal width
 func (a *App) getTerminalWidth() int {
 	cmd := exec.Command("tput", "cols")
 	output, err := cmd.Output()
@@ -165,7 +165,6 @@ func (a *App) getTerminalWidth() int {
 	return width
 }
 
-// playSongAtIndex plays a song at the specified index
 func (a *App) playSongAtIndex(index int) {
 	if index < 0 || index >= len(a.totalSongs) {
 		return
@@ -222,7 +221,6 @@ func (a *App) playSongAtIndex(index int) {
 	}()
 }
 
-// getPlayURL retrieves the play URL with timeout
 func (a *App) getPlayURL(trackID string) (string, bool) {
 	done := make(chan string, 1)
 	go func() {
@@ -373,7 +371,6 @@ func (a *App) moveRowUp() {
 	if row > 0 {
 		a.songTable.Select(row-1, 0)
 	} else if row == 0 && a.currentPage > 1 {
-		// Auto-move to previous page when reaching start of current page
 		a.previousPage()
 		data := a.getCurrentPageData()
 		if len(data) > 0 {
@@ -382,7 +379,6 @@ func (a *App) moveRowUp() {
 	}
 }
 
-// goToFirstPage moves to the first page
 func (a *App) goToFirstPage() {
 	if a.currentPage != 1 {
 		a.currentPage = 1
@@ -392,13 +388,12 @@ func (a *App) goToFirstPage() {
 	}
 }
 
-// goToLastPage moves to the last page
 func (a *App) goToLastPage() {
 	if a.currentPage != a.totalPages {
 		a.currentPage = a.totalPages
 		a.renderSongTable()
 		a.updateStatusWithPageInfo()
-		a.songTable.Select(1, 0) // Skip header row
+		a.songTable.Select(1, 0)
 	}
 }
 
@@ -407,4 +402,47 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func (a *App) startAudioMonitor() {
+	a.audioMonitor = device.NewAudioMonitor(a.ctx, func() {
+		a.onAudioDeviceDisconnected()
+	})
+	a.audioMonitor.Start()
+	log.Println("Audio device monitor started")
+}
+
+func (a *App) onAudioDeviceDisconnected() {
+	_, _, isPlaying, _ := a.state.GetState()
+	if !isPlaying {
+		return
+	}
+
+	loaded, err := a.player.IsSongLoaded()
+	if err != nil || !loaded {
+		return
+	}
+
+	_, err = a.player.Pause()
+	if err != nil {
+		log.Printf("Failed to pause on device disconnect: %v", err)
+		return
+	}
+
+	a.state.SetPlaying(false)
+
+	currentSong, currentIndex, _, _ := a.state.GetState()
+	if currentSong == nil {
+		return
+	}
+
+	pausedStatus := fmt.Sprintf("[yellow]%s [gray](Paused - Audio device disconnected)", currentSong.Title)
+	pausedBar := "[yellow]▓▓▓[darkgray]░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ Paused"
+	statusText := FormatSongInfo(*currentSong, currentIndex, pausedStatus, pausedBar)
+
+	a.tviewApp.QueueUpdateDraw(func() {
+		if a.statusBar != nil {
+			a.statusBar.SetText(statusText)
+		}
+	})
 }
