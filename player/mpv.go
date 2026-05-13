@@ -3,6 +3,7 @@ package player
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/wildeyedskies/go-mpv/mpv"
@@ -68,7 +69,15 @@ func (p *MPVPlayer) GetProgress() (currentPos, totalDuration float64, err error)
 		return 0, 0, err
 	}
 
-	return pos.(float64), duration.(float64), nil
+	posVal, ok := pos.(float64)
+	if !ok {
+		return 0, 0, fmt.Errorf("unexpected type for time-pos: %T", pos)
+	}
+	durVal, ok := duration.(float64)
+	if !ok {
+		return 0, 0, fmt.Errorf("unexpected type for duration: %T", duration)
+	}
+	return posVal, durVal, nil
 }
 
 func (p *MPVPlayer) GetVolume() (float64, error) {
@@ -169,7 +178,8 @@ func (p *MPVPlayer) Cleanup() {
 	}
 
 	defer func() {
-		if recover() != nil {
+		if r := recover(); r != nil {
+			log.Printf("MPVPlayer.Cleanup panic: %v", r)
 		}
 	}()
 

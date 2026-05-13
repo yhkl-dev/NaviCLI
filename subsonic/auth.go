@@ -46,12 +46,10 @@ func (c *Client) authToken(password string) (string, string, error) {
 	return token, salt, nil
 }
 
-func (c *Client) buildParams(extraParams map[string]string) url.Values {
+func (c *Client) buildParams(extraParams map[string]string) (url.Values, error) {
 	token, salt, err := c.authToken(c.Password)
 	if err != nil {
-		// In Phase 3 refactoring, this will return error properly
-		// For now, panic to maintain current function signature
-		panic(fmt.Sprintf("authentication failed: %v", err))
+		return nil, fmt.Errorf("auth token: %w", err)
 	}
 	params := url.Values{}
 	params.Add("u", c.Username)
@@ -64,5 +62,5 @@ func (c *Client) buildParams(extraParams map[string]string) url.Values {
 	for k, v := range extraParams {
 		params.Add(k, v)
 	}
-	return params
+	return params, nil
 }

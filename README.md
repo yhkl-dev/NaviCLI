@@ -16,13 +16,16 @@ A lightweight command line music player for Navidrome, written in Go.
 ## Features
 
 - 🚀 Fast and lightweight
-- 🎨 Terminal-based UI with colors and progress display
-- ⏯ Play/pause/skip controls with real-time progress
-- 🔍 Integrated search functionality
-- 🔊 Volume control
-- 📊 Song information display (artist, album, bitrate, format, etc.)
-- ⌨️ Intuitive keyboard shortcuts
-- 📝 Pagination support (multiple pages of songs)
+- 🎨 Redesigned terminal UI with Amber theme, braille progress bar, and panel layouts
+- ⏯ Play/pause/skip controls with real-time progress and spinner animation
+- 🔍 Integrated search with in-place results
+- 🔊 Volume control with visual bar
+- 📊 Now Playing panel: artist, album, track info, audio specs, oscilloscope
+- 🎛 Sort modes: Random / Title / Artist / Album (`s` key)
+- 📀 Dual song source: Random shuffle or Albums A-Z (`S` key)
+- 🟢 Live connection status indicator
+- ⌨️ Vim-style keyboard shortcuts (`j/k`, `gg/G`, `h/l`)
+- 📝 Pagination with dynamic column widths
 - 🛠 Written in pure Go
 
 ## Installation
@@ -102,22 +105,32 @@ navicli
 
 **Playback Controls:**
 - `Space`: Play/Pause
-- `n` or `N`: Next track
-- `p` or `P`: Previous track
-- `→`: Next track (alternative)
-- `←`: Previous track (alternative)
-- `+` or `=`: Volume up (+5%)
-- `-` or `_`: Volume down (-5%)
+- `n` / `N` / `l`: Next track
+- `p` / `P` / `h`: Previous track
+- `→`: Next track (arrow)
+- `←`: Previous track (arrow)
+- `+` / `=`: Volume up (+5%)
+- `-` / `_`: Volume down (-5%)
 
-**Navigation:**
-- `↑` / `↓`: Select song in list
-- `<` or `>`: Previous/Next page
-- `[` or `]`: Previous/Next page (alternative)
-- `PgUp`/`PgDn`: Previous/Next page (alternative)
+**Navigation (Vim-style):**
+- `j` / `↓`: Move down in list
+- `k` / `↑`: Move up in list
+- `J` / `PgDn`: Next page
+- `K` / `PgUp`: Previous page
+- `>` / `]`: Next page (alternative)
+- `<` / `[`: Previous page (alternative)
+- `gg`: Go to first page
+- `G`: Go to last page
+
+**Sort & Source:**
+- `s`: Cycle sort mode (Random / Title / Artist / Album)
+- `S`: Cycle song source (Random / Albums A-Z)
+
+**Search & Info:**
 - `/`: Open search
 - `?`: Show help panel
-- `q` or `Q`: Show playback queue
-- `ESC`: Close search/modal or quit (when not in search mode)
+- `q` / `Q`: Show playback queue
+- `ESC`: Close modal or exit (when not in search mode)
 - `Ctrl+C`: Force quit
 
 ### Search
@@ -132,13 +145,20 @@ navicli
 
 ### Display Information
 
-When playing a song, you can see:
-- Song title and play status (playing/paused)
-- Technical info: Duration, Format, File size
-- Quality info: Bitrate, Sample rate
-- Metadata: Artist, Album, Track number
-- Real-time progress bar with current time and total duration
-- Current volume level
+When playing, the Now Playing panel shows:
+- Spinning animation indicator + song title
+- Artist, album, track number, duration
+- Dynamic separator line (adapts to panel width)
+- Volume bar with visual fill indicator
+- Connection status dot (green = connected)
+- Playing/paused status
+
+When paused, additional geek details appear:
+- ASCII oscilloscope waveform visualization
+- Audio specs (format, sample rate, bitrate, channels, file size)
+- Go struct debug output (technical metadata)
+
+The bottom bar shows a braille-pattern progress bar with 8x resolution, current/total time, and volume.
 
 ## Development
 ```bash

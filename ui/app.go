@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"log"
 	"os/exec"
-	"reflect"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/rivo/tview"
@@ -18,6 +19,8 @@ import (
 	"github.com/yhkl-dev/NaviCLI/library"
 	"github.com/yhkl-dev/NaviCLI/player"
 )
+
+const dataStartRow = 1
 
 type App struct {
 	tviewApp    *tview.Application
@@ -42,7 +45,39 @@ type App struct {
 	queueView     *QueueView
 	isSearchMode  bool
 	originalSongs []domain.Song
-	audioMonitor  *device.AudioMonitor
+	audioMonitor     *device.AudioMonitor
+	tickCount        int
+	serverConnected  bool
+	playingUpdateMu  sync.Mutex
+	songsMu          sync.RWMutex
+	cachedTermWidth  int
+	lastWidthCheck   time.Time
+	sortMode         int
+	songSource       int // 0=getRandomSongs, 1=getAlbumList2
+	leftTitleBar     *tview.TextView
+	rightTitleBar    *tview.TextView
+}
+
+var songSources = []struct {
+	name string
+}{
+	{"Random"},
+	{"Albums"},
+}
+
+var sortModes = []struct {
+	name string
+	less func(a, b domain.Song) bool
+}{
+	{"Random", nil},
+	{"Title", func(a, b domain.Song) bool { return a.Title < b.Title }},
+	{"Artist", func(a, b domain.Song) bool { return a.Artist < b.Artist }},
+	{"Album", func(a, b domain.Song) bool {
+		if a.Album != b.Album {
+			return a.Album < b.Album
+		}
+		return a.Track < b.Track
+	}},
 }
 
 func NewApp(ctx context.Context, cfg *config.Config, lib library.Library, plr player.Player) *App {
@@ -56,6 +91,7 @@ func NewApp(ctx context.Context, cfg *config.Config, lib library.Library, plr pl
 		keyBindings: NewKeyBindingManager(),
 		pageSize:    cfg.UI.PageSize,
 		currentPage: 1,
+		sortMode:    1, // default: Title
 	}
 }
 
@@ -63,6 +99,7 @@ func (a *App) Run() error {
 	a.createHomepage()
 	go a.updateProgressBar()
 	go a.loadMusic()
+	go a.monitorConnection()
 	go a.handlePlayerEvents()
 	go a.handleTerminalResize()
 	a.startAudioMonitor()
@@ -79,7 +116,15 @@ func (a *App) Stop() {
 
 func (a *App) loadMusic() {
 	loadSize := a.cfg.UI.PageSize * 10
-	songs, err := a.library.GetRandomSongs(loadSize)
+	var songs []domain.Song
+	var err error
+
+	if a.songSource == 0 {
+		songs, err = a.library.GetRandomSongs(loadSize)
+	} else {
+		songs, err = a.library.GetAlbumSongs("alphabeticalByName", loadSize/a.cfg.UI.PageSize)
+	}
+
 	if err != nil {
 		a.tviewApp.QueueUpdateDraw(func() {
 			if a.statusBar != nil {
@@ -89,16 +134,21 @@ func (a *App) loadMusic() {
 		return
 	}
 
-	domainSongs := songs
-	if !reflect.DeepEqual(a.totalSongs, domainSongs) {
-		a.totalSongs = domainSongs
-		a.totalPages = (len(a.totalSongs) + a.pageSize - 1) / a.pageSize
-		a.currentPage = 1 // Reset to first page
-		a.tviewApp.QueueUpdateDraw(func() {
-			a.renderSongTable()
-			a.updateStatusWithPageInfo()
-		})
+	a.songsMu.Lock()
+	a.totalSongs = songs
+	a.totalPages = (len(a.totalSongs) + a.pageSize - 1) / a.pageSize
+	if a.totalPages == 0 {
+		a.totalPages = 1
 	}
+	a.currentPage = 1
+	a.songsMu.Unlock()
+
+	a.SortSongs()
+
+	a.tviewApp.QueueUpdateDraw(func() {
+		a.renderSongTable()
+		a.updateStatusWithPageInfo()
+	})
 }
 
 func (a *App) handlePlayerEvents() {
@@ -140,7 +190,10 @@ func (a *App) handleTerminalResize() {
 			currentWidth := a.getTerminalWidth()
 			if currentWidth != lastWidth && lastWidth != 0 {
 				a.tviewApp.QueueUpdateDraw(func() {
-					if len(a.totalSongs) > 0 {
+					a.songsMu.RLock()
+					hasSongs := len(a.totalSongs) > 0
+					a.songsMu.RUnlock()
+					if hasSongs {
 						a.renderSongTable()
 					}
 				})
@@ -152,45 +205,121 @@ func (a *App) handleTerminalResize() {
 	}
 }
 
+func (a *App) monitorConnection() {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	// Initial ping
+	a.serverConnected = a.library.Ping() == nil
+
+	for {
+		select {
+		case <-ticker.C:
+			a.serverConnected = a.library.Ping() == nil
+		case <-a.ctx.Done():
+			return
+		}
+	}
+}
+
+func (a *App) SortSongs() {
+	mode := sortModes[a.sortMode]
+	if mode.less == nil {
+		return
+	}
+	a.songsMu.Lock()
+	sort.SliceStable(a.totalSongs, func(i, j int) bool {
+		return mode.less(a.totalSongs[i], a.totalSongs[j])
+	})
+	a.songsMu.Unlock()
+}
+
+func (a *App) cycleSortMode() {
+	a.sortMode = (a.sortMode + 1) % len(sortModes)
+	a.SortSongs()
+	a.renderSongTable()
+	a.updateStatusWithPageInfo()
+	a.updateSortTitle()
+}
+
+func (a *App) cycleSongSource() {
+	a.songSource = (a.songSource + 1) % len(songSources)
+	go a.loadMusic()
+	a.updateSortTitle()
+}
+
+func (a *App) updateSortTitle() {
+	mode := sortModes[a.sortMode]
+	src := songSources[a.songSource]
+	if a.rightTitleBar != nil {
+		a.rightTitleBar.SetText(fmt.Sprintf("[#ffb300]── Library  [darkgray][%s · %s]", src.name, mode.name))
+	}
+	if a.leftTitleBar != nil {
+		a.leftTitleBar.SetText(fmt.Sprintf("[#ffb300]── Now Playing  [darkgray][%s]", mode.name))
+	}
+}
+
+func (a *App) leftPanelTextWidth() int {
+	w := a.getTerminalWidth() / 4
+	if w < 24 {
+		w = 24
+	}
+	return w - 4
+}
+
 func (a *App) getTerminalWidth() int {
+	if time.Since(a.lastWidthCheck) < time.Second && a.cachedTermWidth > 0 {
+		return a.cachedTermWidth
+	}
+	a.lastWidthCheck = time.Now()
+
 	cmd := exec.Command("tput", "cols")
 	output, err := cmd.Output()
 	if err != nil {
+		if a.cachedTermWidth > 0 {
+			return a.cachedTermWidth
+		}
 		return 80
 	}
 	width, err := strconv.Atoi(strings.TrimSpace(string(output)))
 	if err != nil || width <= 0 {
+		if a.cachedTermWidth > 0 {
+			return a.cachedTermWidth
+		}
 		return 80
 	}
+	a.cachedTermWidth = width
 	return width
 }
 
 func (a *App) playSongAtIndex(index int) {
+	a.songsMu.RLock()
 	if index < 0 || index >= len(a.totalSongs) {
+		a.songsMu.RUnlock()
 		return
 	}
+	currentTrack := a.totalSongs[index]
+	a.songsMu.RUnlock()
 
 	_, _, _, loading := a.state.GetState()
 	if loading {
 		return
 	}
-
-	currentTrack := a.totalSongs[index]
 	a.state.SetLoading(true)
 	a.state.SetCurrentSong(&currentTrack, index)
 	a.state.SetPlaying(false)
 
-	loadingStatus := fmt.Sprintf("[yellow]%s [darkgray](Loading...)", currentTrack.Title)
-	loadingBar := "[yellow]▓▓▓[darkgray]░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ Loading..."
-	a.updateStatus(FormatSongInfo(currentTrack, index, loadingStatus, loadingBar))
+	loadingStatus := fmt.Sprintf("[#ffb300]%s [darkgray](Loading...)", currentTrack.Title)
+	a.updateStatus(FormatSongInfo(currentTrack, loadingStatus, "", "[darkgray]Vol: [...", a.leftPanelTextWidth(), a.serverConnected, ""))
 
 	go func() {
 		defer a.state.SetLoading(false)
 		defer func() {
 			if r := recover(); r != nil {
+				log.Printf("playSongAtIndex panic: %v", r)
 				a.state.SetPlaying(false)
 				failedStatus := fmt.Sprintf("[red]%s [darkgray](Failed)", currentTrack.Title)
-				a.updateStatus(FormatSongInfo(currentTrack, index, failedStatus, "[red]Play Failed"))
+				a.updateStatus(FormatSongInfo(currentTrack, failedStatus, "", "[darkgray]Vol: [...", a.leftPanelTextWidth(), a.serverConnected, ""))
 			}
 		}()
 
@@ -213,38 +342,26 @@ func (a *App) playSongAtIndex(index int) {
 
 		a.state.SetPlaying(true)
 
-		playingStatus := fmt.Sprintf("[lightgreen]%s", currentTrack.Title)
-		playingBar := "[lightgreen]▓[darkgray]░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ 0.0%"
-		a.updateStatus(FormatSongInfo(currentTrack, index, playingStatus, playingBar))
+		playingStatus := fmt.Sprintf("[#ffb300]▶ PLAYING")
+		a.updateStatus(FormatSongInfo(currentTrack, playingStatus, "◴", "[darkgray]Vol: [...", a.leftPanelTextWidth(), a.serverConnected, CreatePlayingExtras(currentTrack, a.leftPanelTextWidth())))
 
 		time.Sleep(500 * time.Millisecond)
 	}()
 }
 
 func (a *App) getPlayURL(trackID string) (string, bool) {
-	done := make(chan string, 1)
-	go func() {
-		defer func() {
-			if recover() != nil {
-				done <- ""
-			}
-		}()
-		done <- a.library.GetPlayURL(trackID)
-	}()
-
-	select {
-	case url := <-done:
-		return url, url != ""
-	case <-time.After(10 * time.Second):
-		return "", false
-	}
+	url := a.library.GetPlayURL(trackID)
+	return url, url != ""
 }
 
 // playNextSong plays the next song in the list
 func (a *App) playNextSong() {
+	a.songsMu.RLock()
 	if len(a.totalSongs) == 0 {
+		a.songsMu.RUnlock()
 		return
 	}
+	a.songsMu.RUnlock()
 
 	_, currentIndex, _, loading := a.state.GetState()
 	if loading {
@@ -252,18 +369,23 @@ func (a *App) playNextSong() {
 	}
 
 	nextIndex := currentIndex + 1
+	a.songsMu.RLock()
 	if nextIndex >= len(a.totalSongs) {
 		nextIndex = 0
 	}
+	a.songsMu.RUnlock()
 
 	go a.playSongAtIndex(nextIndex)
 }
 
 // playPreviousSong plays the previous song in the list
 func (a *App) playPreviousSong() {
+	a.songsMu.RLock()
 	if len(a.totalSongs) == 0 {
+		a.songsMu.RUnlock()
 		return
 	}
+	a.songsMu.RUnlock()
 
 	_, currentIndex, _, loading := a.state.GetState()
 	if loading {
@@ -272,7 +394,9 @@ func (a *App) playPreviousSong() {
 
 	prevIndex := currentIndex - 1
 	if prevIndex < 0 {
+		a.songsMu.RLock()
 		prevIndex = len(a.totalSongs) - 1
+		a.songsMu.RUnlock()
 	}
 
 	go a.playSongAtIndex(prevIndex)
@@ -315,6 +439,8 @@ func (a *App) updateStatus(info string) {
 
 // getCurrentPageData returns songs for the current page
 func (a *App) getCurrentPageData() []domain.Song {
+	a.songsMu.RLock()
+	defer a.songsMu.RUnlock()
 	start := (a.currentPage - 1) * a.pageSize
 	end := min(start+a.pageSize, len(a.totalSongs))
 	return a.totalSongs[start:end]
@@ -340,8 +466,11 @@ func (a *App) previousPage() {
 
 // updateStatusWithPageInfo updates status bar with page information
 func (a *App) updateStatusWithPageInfo() {
+	a.songsMu.RLock()
+	songCount := len(a.totalSongs)
+	a.songsMu.RUnlock()
 	pageInfo := fmt.Sprintf("[gray]Page %d/%d | %d songs total",
-		a.currentPage, a.totalPages, len(a.totalSongs))
+		a.currentPage, a.totalPages, songCount)
 
 	currentSong, _, isPlaying, _ := a.state.GetState()
 	if currentSong != nil && isPlaying {
@@ -349,7 +478,9 @@ func (a *App) updateStatusWithPageInfo() {
 		return
 	}
 
-	a.statusBar.SetText(CreateWelcomeMessage(len(a.totalSongs)) + "\n\n" + pageInfo)
+	if a.statusBar != nil {
+		a.statusBar.SetText(CreateWelcomeMessage(len(a.totalSongs)) + "\n\n" + pageInfo)
+	}
 }
 
 // moveRowDown moves selection down in the song table
@@ -384,7 +515,7 @@ func (a *App) goToFirstPage() {
 		a.currentPage = 1
 		a.renderSongTable()
 		a.updateStatusWithPageInfo()
-		a.songTable.Select(1, 0) // Skip header row
+		a.songTable.Select(dataStartRow, 0)
 	}
 }
 
@@ -393,7 +524,7 @@ func (a *App) goToLastPage() {
 		a.currentPage = a.totalPages
 		a.renderSongTable()
 		a.updateStatusWithPageInfo()
-		a.songTable.Select(1, 0)
+		a.songTable.Select(dataStartRow, 0)
 	}
 }
 
@@ -431,14 +562,13 @@ func (a *App) onAudioDeviceDisconnected() {
 
 	a.state.SetPlaying(false)
 
-	currentSong, currentIndex, _, _ := a.state.GetState()
+	currentSong, _, _, _ := a.state.GetState()
 	if currentSong == nil {
 		return
 	}
 
-	pausedStatus := fmt.Sprintf("[yellow]%s [gray](Paused - Audio device disconnected)", currentSong.Title)
-	pausedBar := "[yellow]▓▓▓[darkgray]░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ Paused"
-	statusText := FormatSongInfo(*currentSong, currentIndex, pausedStatus, pausedBar)
+	pausedStatus := fmt.Sprintf("[#ff9800]⏸ PAUSED")
+	statusText := FormatSongInfo(*currentSong, pausedStatus, "◷", "[darkgray]Vol: [...", a.leftPanelTextWidth(), a.serverConnected, "")
 
 	a.tviewApp.QueueUpdateDraw(func() {
 		if a.statusBar != nil {
