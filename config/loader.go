@@ -9,6 +9,7 @@ import (
 func Load() (*Config, error) {
 	viper.SetConfigName("config")
 	viper.SetConfigType("toml")
+	viper.AddConfigPath("$HOME/.config/navicli/")
 	viper.AddConfigPath("$HOME/.config/")
 	viper.AddConfigPath(".")
 

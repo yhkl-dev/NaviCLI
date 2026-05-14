@@ -88,13 +88,15 @@ sudo mv navicli /usr/local/bin/
 ```
 
 ### Configuration
-Create a config file at `~/.config/config.toml`:
+Create a config file at `~/.config/navicli/config.toml`:
 ```toml
 [server]
 url = "https://your-navidrome-server.com"
 username = "your-username"
 password = "your-password"
 ```
+
+The legacy path `~/.config/config.toml` is also supported for backward compatibility.
 
 ## Usage
 ```bash
