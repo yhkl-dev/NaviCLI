@@ -3,6 +3,7 @@ package player
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/wildeyedskies/go-mpv/mpv"
@@ -24,8 +25,7 @@ func NewMPVPlayer(ctx context.Context) (*MPVPlayer, error) {
 		instance: &mpvplayer.Mpvplayer{
 			Mpv:               mpvInstance,
 			EventChannel:      createEventListener(ctx, mpvInstance),
-			Queue:             make([]mpvplayer.QueueItem, 0),
-			ReplaceInProgress: false,
+			Queue: make([]mpvplayer.QueueItem, 0),
 		},
 	}
 
@@ -68,7 +68,15 @@ func (p *MPVPlayer) GetProgress() (currentPos, totalDuration float64, err error)
 		return 0, 0, err
 	}
 
-	return pos.(float64), duration.(float64), nil
+	posVal, ok := pos.(float64)
+	if !ok {
+		return 0, 0, fmt.Errorf("unexpected type for time-pos: %T", pos)
+	}
+	durVal, ok := duration.(float64)
+	if !ok {
+		return 0, 0, fmt.Errorf("unexpected type for duration: %T", duration)
+	}
+	return posVal, durVal, nil
 }
 
 func (p *MPVPlayer) GetVolume() (float64, error) {
@@ -120,6 +128,7 @@ func (p *MPVPlayer) AddToQueue(item domain.QueueItem) {
 	if p.instance == nil {
 		return
 	}
+	p.instance.QueueMu.Lock()
 	p.instance.Queue = append(p.instance.Queue, mpvplayer.QueueItem{
 		Id:       item.ID,
 		Uri:      item.URI,
@@ -127,6 +136,7 @@ func (p *MPVPlayer) AddToQueue(item domain.QueueItem) {
 		Artist:   item.Artist,
 		Duration: item.Duration,
 	})
+	p.instance.QueueMu.Unlock()
 }
 
 func (p *MPVPlayer) GetQueue() []domain.QueueItem {
@@ -134,6 +144,7 @@ func (p *MPVPlayer) GetQueue() []domain.QueueItem {
 		return []domain.QueueItem{}
 	}
 
+	p.instance.QueueMu.Lock()
 	queue := make([]domain.QueueItem, len(p.instance.Queue))
 	for i, item := range p.instance.Queue {
 		queue[i] = domain.QueueItem{
@@ -144,6 +155,7 @@ func (p *MPVPlayer) GetQueue() []domain.QueueItem {
 			Duration: item.Duration,
 		}
 	}
+	p.instance.QueueMu.Unlock()
 	return queue
 }
 
@@ -151,7 +163,9 @@ func (p *MPVPlayer) ClearQueue() {
 	if p.instance == nil {
 		return
 	}
+	p.instance.QueueMu.Lock()
 	p.instance.Queue = make([]mpvplayer.QueueItem, 0)
+	p.instance.QueueMu.Unlock()
 }
 
 func (p *MPVPlayer) EventChannel() <-chan *mpv.Event {
@@ -169,7 +183,8 @@ func (p *MPVPlayer) Cleanup() {
 	}
 
 	defer func() {
-		if recover() != nil {
+		if r := recover(); r != nil {
+			log.Printf("MPVPlayer.Cleanup panic: %v", r)
 		}
 	}()
 

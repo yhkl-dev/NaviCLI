@@ -34,10 +34,6 @@ func (p *PlayerConfig) GetHTTPTimeout() time.Duration {
 	return time.Duration(p.HTTPTimeout) * time.Second
 }
 
-func (c *Config) Validate() error {
-	return nil
-}
-
 func DefaultConfig() *Config {
 	return &Config{
 		UI: UIConfig{

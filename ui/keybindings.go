@@ -16,9 +16,10 @@ type KeyBinding struct {
 }
 
 type KeyBindingManager struct {
-	bindings map[tcell.Key]KeyAction // special key -> action mapping
-	runeMap  map[rune]KeyAction      // rune -> action mapping
-	pending  string                  // pending key sequence for multi-key bindings like 'gg'
+	bindings  map[tcell.Key]KeyAction // special key -> action mapping
+	runeMap   map[rune]KeyAction      // rune -> action mapping
+	pending   string                  // pending key sequence for multi-key bindings like 'gg'
+	ggHandler func()                  // standalone handler for 'gg' sequence
 }
 
 func NewKeyBindingManager() *KeyBindingManager {
@@ -35,6 +36,9 @@ func (km *KeyBindingManager) RegisterKeyBinding(action KeyAction, keys []tcell.K
 	}
 	for _, r := range runes {
 		km.runeMap[r] = action
+	}
+	if action.name == "goStart" {
+		km.ggHandler = action.handler
 	}
 }
 
@@ -54,11 +58,9 @@ func (km *KeyBindingManager) HandleKey(event *tcell.EventKey) bool {
 
 	if km.pending == "g" {
 		km.pending = ""
-		if r == 'g' {
-			if action, ok := km.runeMap['G']; ok && action.name == "goStart" {
-				action.handler()
-				return true
-			}
+		if r == 'g' && km.ggHandler != nil {
+			km.ggHandler()
+			return true
 		}
 		if action, ok := km.runeMap[r]; ok {
 			action.handler()

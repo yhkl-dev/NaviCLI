@@ -25,6 +25,27 @@ func (s *SubsonicLibrary) GetRandomSongs(count int) ([]domain.Song, error) {
 	return convertToDomainSongs(songs), nil
 }
 
+func (s *SubsonicLibrary) GetAlbumSongs(albumType string, size int) ([]domain.Song, error) {
+	if size <= 0 {
+		size = 20
+	}
+	albums, err := s.client.GetAlbumList2(albumType, size)
+	if err != nil {
+		return nil, err
+	}
+
+	var allSongs []domain.Song
+	for _, album := range albums {
+		songs, err := s.client.GetAlbum(album.ID)
+		if err != nil {
+			continue
+		}
+		domainSongs := convertToDomainSongs(songs)
+		allSongs = append(allSongs, domainSongs...)
+	}
+	return allSongs, nil
+}
+
 func (s *SubsonicLibrary) SearchSongs(query string, limit int) ([]domain.Song, error) {
 	songs, err := s.client.SearchSongs(query)
 	if err != nil {

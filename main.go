@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -47,16 +48,20 @@ func main() {
 
 	app := ui.NewApp(ctx, cfg, lib, plr)
 
+	var cleanupOnce sync.Once
+	cleanup := func() {
+		cancel()
+		time.Sleep(10 * time.Millisecond)
+		app.Stop()
+		plr.Cleanup()
+	}
+
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		<-sigChan
 		log.Println("Received exit signal, cleaning up resources...")
-
-		cancel()
-		time.Sleep(10 * time.Millisecond)
-		app.Stop()
-		plr.Cleanup()
+		cleanupOnce.Do(cleanup)
 
 		go func() {
 			time.Sleep(2 * time.Second)
@@ -72,9 +77,7 @@ func main() {
 	}
 
 	log.Println("Program exiting, cleaning up...")
-	cancel()
-	time.Sleep(10 * time.Millisecond)
-	plr.Cleanup()
+	cleanupOnce.Do(cleanup)
 
 	log.Println("Program exit.")
 	os.Exit(0)

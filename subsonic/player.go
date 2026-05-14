@@ -4,18 +4,21 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 )
 
 func (c *Client) GetRandomSongs(size int) ([]Song, error) {
-	// Use provided size, fallback to c.PageSize if size is 0
 	if size <= 0 {
 		size = c.PageSize
 	}
-	params := c.buildParams(map[string]string{
+	params, err := c.buildParams(map[string]string{
 		"size":   fmt.Sprintf("%d", size),
 		"format": "json",
 	})
+	if err != nil {
+		return nil, fmt.Errorf("build params: %w", err)
+	}
 	requestUrl := fmt.Sprintf("%s/rest/getRandomSongs?%s", c.BaseURL, params.Encode())
 	req, err := http.NewRequest("GET", requestUrl, nil)
 	if err != nil {
@@ -66,26 +69,57 @@ func (c *Client) GetRandomSongs(size int) ([]Song, error) {
 }
 
 func (c *Client) GetServerInfo() error {
-	params := c.buildParams(map[string]string{})
-	requestUrl := fmt.Sprintf("%s/rest/ping?%s", c.BaseURL, params.Encode())
-	resp, err := http.Get(requestUrl)
+	params, err := c.buildParams(map[string]string{})
+	if err != nil {
+		return fmt.Errorf("build params: %w", err)
+	}
+	requestUrl := fmt.Sprintf("%s/rest/ping.view?%s", c.BaseURL, params.Encode())
+
+	req, err := http.NewRequest("GET", requestUrl, nil)
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+
+	resp, err := c.HttpClient.Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("unexpected status: %d, response: %s", resp.StatusCode, string(body))
+	}
+
+	// Consume body for connection reuse
+	io.Copy(io.Discard, resp.Body)
 	return nil
 }
+
 func (c *Client) SearchSongs(query string) ([]Song, error) {
-	params := c.buildParams(map[string]string{
+	params, err := c.buildParams(map[string]string{
 		"query":     query,
 		"songCount": "10",
 	})
+	if err != nil {
+		return nil, fmt.Errorf("build params: %w", err)
+	}
 
-	resp, err := http.Get(fmt.Sprintf("%s/rest/search3.view?%s", c.BaseURL, params.Encode()))
+	req, err := http.NewRequest("GET", fmt.Sprintf("%s/rest/search3.view?%s", c.BaseURL, params.Encode()), nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+
+	resp, err := c.HttpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("unexpected status: %d, response: %s", resp.StatusCode, string(body))
+	}
 
 	var result struct {
 		SubsonicResponse struct {
@@ -102,21 +136,108 @@ func (c *Client) SearchSongs(query string) ([]Song, error) {
 }
 
 func (c *Client) GetPlayURL(songID string) string {
-	params := c.buildParams(map[string]string{
+	params, err := c.buildParams(map[string]string{
 		"id":     songID,
 		"format": "mp3",
 	})
+	if err != nil {
+		log.Printf("GetPlayURL buildParams error: %v", err)
+		return ""
+	}
 	return fmt.Sprintf("%s/rest/stream.view?%s", c.BaseURL, params.Encode())
 }
 
-// GetCoverArtURL returns the URL for album cover art
+func (c *Client) GetAlbumList2(albumType string, size int) ([]AlbumID3, error) {
+	if size <= 0 {
+		size = 20
+	}
+	params, err := c.buildParams(map[string]string{
+		"type": albumType,
+		"size": fmt.Sprintf("%d", size),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("build params: %w", err)
+	}
+
+	req, err := http.NewRequest("GET", fmt.Sprintf("%s/rest/getAlbumList2?%s", c.BaseURL, params.Encode()), nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+
+	resp, err := c.HttpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("unexpected status: %d, response: %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		SubsonicResponse struct {
+			AlbumList2 struct {
+				Albums []AlbumID3 `json:"album"`
+			} `json:"albumList2"`
+		} `json:"subsonic-response"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode response: %w", err)
+	}
+
+	return result.SubsonicResponse.AlbumList2.Albums, nil
+}
+
+func (c *Client) GetAlbum(albumID string) ([]Song, error) {
+	params, err := c.buildParams(map[string]string{
+		"id": albumID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("build params: %w", err)
+	}
+
+	req, err := http.NewRequest("GET", fmt.Sprintf("%s/rest/getAlbum?%s", c.BaseURL, params.Encode()), nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+
+	resp, err := c.HttpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("unexpected status: %d, response: %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		SubsonicResponse struct {
+			Album struct {
+				Songs []Song `json:"song"`
+			} `json:"album"`
+		} `json:"subsonic-response"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode response: %w", err)
+	}
+
+	return result.SubsonicResponse.Album.Songs, nil
+}
+
 func (c *Client) GetCoverArtURL(coverArtID string) string {
 	if coverArtID == "" {
 		return ""
 	}
-	params := c.buildParams(map[string]string{
+	params, err := c.buildParams(map[string]string{
 		"id":   coverArtID,
-		"size": "300", // 300x300 pixels
+		"size": "300",
 	})
+	if err != nil {
+		log.Printf("GetCoverArtURL buildParams error: %v", err)
+		return ""
+	}
 	return fmt.Sprintf("%s/rest/getCoverArt.view?%s", c.BaseURL, params.Encode())
 }

@@ -25,7 +25,7 @@ func NewQueueView(app *App) *QueueView {
 		SetFixed(1, 0)
 
 	// Setup header
-	headerStyle := tcell.StyleDefault.Foreground(tcell.ColorYellow).Attributes(tcell.AttrBold)
+	headerStyle := tcell.StyleDefault.Foreground(tcell.NewHexColor(0xffb300)).Attributes(tcell.AttrBold)
 	qv.table.SetCell(0, 0, tview.NewTableCell("#").SetStyle(headerStyle))
 	qv.table.SetCell(0, 1, tview.NewTableCell("Title").SetStyle(headerStyle))
 	qv.table.SetCell(0, 2, tview.NewTableCell("Artist").SetStyle(headerStyle))
@@ -37,7 +37,8 @@ func NewQueueView(app *App) *QueueView {
 
 	qv.container.SetBorder(true).
 		SetTitle(" Playback Queue (ESC/q to close) ").
-		SetBorderColor(tcell.NewHexColor(0x00bcd4))
+		SetBorderColor(tcell.NewHexColor(0xffb300)).
+		SetTitleColor(tcell.NewHexColor(0xffb300))
 
 	return qv
 }
@@ -110,6 +111,6 @@ func (qv *QueueView) refreshQueue() {
 	}
 
 	qv.table.SetSelectedStyle(tcell.StyleDefault.
-		Background(tcell.ColorDarkCyan).
+		Background(tcell.NewHexColor(0xffb300)).
 		Foreground(tcell.ColorWhite))
 }

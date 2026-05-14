@@ -54,6 +54,43 @@ func TestKeyBindingManager(t *testing.T) {
 	}
 }
 
+func TestGgWorksWhenGoEndAlsoRegistered(t *testing.T) {
+	km := NewKeyBindingManager()
+
+	goStartCalled := false
+	km.RegisterKeyBinding(
+		KeyAction{name: "goStart", handler: func() { goStartCalled = true }},
+		[]tcell.Key{}, []rune{'G'},
+	)
+
+	goEndCalled := false
+	km.RegisterKeyBinding(
+		KeyAction{name: "goEnd", handler: func() { goEndCalled = true }},
+		[]tcell.Key{}, []rune{'G'},
+	)
+
+	// Press 'G' once should trigger goEnd (last registered for 'G')
+	eventG := tcell.NewEventKey(tcell.KeyRune, 'G', tcell.ModNone)
+	if !km.HandleKey(eventG) {
+		t.Errorf("Expected 'G' to be handled")
+	}
+	if !goEndCalled {
+		t.Errorf("Expected goEnd handler for single 'G'")
+	}
+
+	// Press 'gg' should trigger goStart
+	goStartCalled = false
+	event1 := tcell.NewEventKey(tcell.KeyRune, 'g', tcell.ModNone)
+	km.HandleKey(event1)
+	event2 := tcell.NewEventKey(tcell.KeyRune, 'g', tcell.ModNone)
+	if !km.HandleKey(event2) {
+		t.Errorf("Expected 'gg' sequence to be handled")
+	}
+	if !goStartCalled {
+		t.Errorf("Expected goStart handler for 'gg' sequence")
+	}
+}
+
 func TestKeyBindingManagerReset(t *testing.T) {
 	km := NewKeyBindingManager()
 

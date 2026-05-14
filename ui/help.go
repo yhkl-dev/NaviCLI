@@ -22,9 +22,9 @@ func NewHelpView(app *App) *HelpView {
 		SetScrollable(true).
 		SetWrap(true)
 
-	helpText := `[yellow::b]Keyboard Shortcuts[-:-:-]
+	helpText := `[#ffb300::b]Keyboard Shortcuts[-:-:-]
 
-[lightgreen]Playback Controls:[-]
+[#ffb300]Playback Controls:[-]
   [white]Space[-]       Play/Pause current song
   [white]Enter[-]       Play selected song
   [white]n / N / l[-]   Next song
@@ -33,7 +33,7 @@ func NewHelpView(app *App) *HelpView {
   [white]+ / =[-]       Volume up (+5%)
   [white]- / _[-]       Volume down (-5%)
 
-[lightgreen]Navigation (Vim-style):[-]
+[#ffb300]Navigation (Vim-style):[-]
   [white]j / ↓[-]       Move down in list
   [white]k / ↑[-]       Move up in list
   [white]J / PgDn[-]    Next page
@@ -43,16 +43,18 @@ func NewHelpView(app *App) *HelpView {
   [white]gg[-]          Go to first page
   [white]G[-]           Go to last page
 
-[lightgreen]Search & Info:[-]
+[#ffb300]Search & Info:[-]
   [white]/[-]           Open search
+  [white]s[-]           Sort: Random / Title / Artist / Album
+  [white]S[-]           Source: Random / Albums
   [white]?[-]           Show this help panel
   [white]q / Q[-]       Show playback queue
 
-[lightgreen]General:[-]
+[#ffb300]General:[-]
   [white]ESC[-]         Close modal / Exit program
   [white]Ctrl+C[-]      Exit program
 
-[yellow]Press ESC or ? to close this help panel[-]
+[#ffb300]Press ESC or ? to close this help panel[-]
 `
 
 	hv.textView.SetText(helpText)
@@ -63,7 +65,8 @@ func NewHelpView(app *App) *HelpView {
 
 	hv.container.SetBorder(true).
 		SetTitle(" Help (ESC to close) ").
-		SetBorderColor(tcell.ColorYellow)
+		SetBorderColor(tcell.NewHexColor(0xffb300)).
+		SetTitleColor(tcell.NewHexColor(0xffb300))
 
 	return hv
 }
