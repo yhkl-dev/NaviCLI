@@ -475,7 +475,7 @@ func (a *App) updateProgressBar() {
 				return
 			}
 
-			a.tickCount++
+			a.tickCount.Add(1)
 
 			currentSong, _, isPlaying, isLoading := a.state.GetState()
 			if isLoading {
@@ -538,7 +538,7 @@ func (a *App) updatePausedDisplay(song *domain.Song) {
 				volumeVal = vol
 			}
 
-			spinner := SpinnerChar(a.tickCount)
+			spinner := SpinnerChar(int(a.tickCount.Load()))
 			volBar := CreateVolumeBar(volumeVal, 10)
 
 			bottomBar := CreateBottomBar(progress, a.cfg.UI.ProgressBarWidth, currentTime, totalTime, volumeText,
@@ -546,7 +546,7 @@ func (a *App) updatePausedDisplay(song *domain.Song) {
 			a.progressBar.SetText(bottomBar)
 
 			pausedStatus := fmt.Sprintf("[#ff9800]⏸ PAUSED")
-			a.statusBar.SetText(FormatSongInfo(*song, pausedStatus, spinner, volBar, a.leftPanelTextWidth(), a.serverConnected, CreatePausedExtras(*song, a.leftPanelTextWidth())))
+			a.statusBar.SetText(FormatSongInfo(*song, pausedStatus, spinner, volBar, a.leftPanelTextWidth(), a.serverConnected.Load(), CreatePausedExtras(*song, a.leftPanelTextWidth())))
 		}
 	})
 }
@@ -584,7 +584,7 @@ func (a *App) updatePlayingDisplay(song *domain.Song) {
 		volumeVal = vol
 	}
 
-	spinner := SpinnerChar(a.tickCount)
+	spinner := SpinnerChar(int(a.tickCount.Load()))
 	volBar := CreateVolumeBar(volumeVal, 10)
 
 	bottomBar := CreateBottomBar(progress, a.cfg.UI.ProgressBarWidth, currentTime, totalTime, volumeText,
@@ -596,7 +596,7 @@ func (a *App) updatePlayingDisplay(song *domain.Song) {
 			a.progressBar.SetText(bottomBar)
 		}
 		if a.statusBar != nil {
-			a.statusBar.SetText(FormatSongInfo(*song, playingStatus, spinner, volBar, a.leftPanelTextWidth(), a.serverConnected, CreatePlayingExtras(*song, a.leftPanelTextWidth())))
+			a.statusBar.SetText(FormatSongInfo(*song, playingStatus, spinner, volBar, a.leftPanelTextWidth(), a.serverConnected.Load(), CreatePlayingExtras(*song, a.leftPanelTextWidth())))
 		}
 	})
 }

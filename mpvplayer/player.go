@@ -2,6 +2,7 @@ package mpvplayer
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/wildeyedskies/go-mpv/mpv"
 )
@@ -23,9 +24,9 @@ type QueueItem struct {
 
 type Mpvplayer struct {
 	*mpv.Mpv
-	EventChannel      chan *mpv.Event
-	Queue             []QueueItem
-	ReplaceInProgress bool
+	EventChannel chan *mpv.Event
+	Queue        []QueueItem
+	QueueMu      sync.Mutex
 }
 
 func (m *Mpvplayer) GetProgress() (float64, error) {
@@ -116,8 +117,15 @@ func (m *Mpvplayer) Pause() (int, error) {
 		}
 		return PlayerPaused, nil
 	} else {
-		if len(m.Queue) != 0 {
-			err := m.Command([]string{"loadfile", m.Queue[0].Uri})
+		m.QueueMu.Lock()
+		hasQueue := len(m.Queue) != 0
+		var uri string
+		if hasQueue {
+			uri = m.Queue[0].Uri
+		}
+		m.QueueMu.Unlock()
+		if hasQueue {
+			err := m.Command([]string{"loadfile", uri})
 			return PlayerPlaying, err
 		} else {
 			return PlayerStopped, nil

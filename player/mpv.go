@@ -25,8 +25,7 @@ func NewMPVPlayer(ctx context.Context) (*MPVPlayer, error) {
 		instance: &mpvplayer.Mpvplayer{
 			Mpv:               mpvInstance,
 			EventChannel:      createEventListener(ctx, mpvInstance),
-			Queue:             make([]mpvplayer.QueueItem, 0),
-			ReplaceInProgress: false,
+			Queue: make([]mpvplayer.QueueItem, 0),
 		},
 	}
 
@@ -129,6 +128,7 @@ func (p *MPVPlayer) AddToQueue(item domain.QueueItem) {
 	if p.instance == nil {
 		return
 	}
+	p.instance.QueueMu.Lock()
 	p.instance.Queue = append(p.instance.Queue, mpvplayer.QueueItem{
 		Id:       item.ID,
 		Uri:      item.URI,
@@ -136,6 +136,7 @@ func (p *MPVPlayer) AddToQueue(item domain.QueueItem) {
 		Artist:   item.Artist,
 		Duration: item.Duration,
 	})
+	p.instance.QueueMu.Unlock()
 }
 
 func (p *MPVPlayer) GetQueue() []domain.QueueItem {
@@ -143,6 +144,7 @@ func (p *MPVPlayer) GetQueue() []domain.QueueItem {
 		return []domain.QueueItem{}
 	}
 
+	p.instance.QueueMu.Lock()
 	queue := make([]domain.QueueItem, len(p.instance.Queue))
 	for i, item := range p.instance.Queue {
 		queue[i] = domain.QueueItem{
@@ -153,6 +155,7 @@ func (p *MPVPlayer) GetQueue() []domain.QueueItem {
 			Duration: item.Duration,
 		}
 	}
+	p.instance.QueueMu.Unlock()
 	return queue
 }
 
@@ -160,7 +163,9 @@ func (p *MPVPlayer) ClearQueue() {
 	if p.instance == nil {
 		return
 	}
+	p.instance.QueueMu.Lock()
 	p.instance.Queue = make([]mpvplayer.QueueItem, 0)
+	p.instance.QueueMu.Unlock()
 }
 
 func (p *MPVPlayer) EventChannel() <-chan *mpv.Event {

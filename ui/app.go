@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/rivo/tview"
@@ -46,8 +47,8 @@ type App struct {
 	isSearchMode  bool
 	originalSongs []domain.Song
 	audioMonitor     *device.AudioMonitor
-	tickCount        int
-	serverConnected  bool
+	tickCount        atomic.Int64
+	serverConnected  atomic.Bool
 	playingUpdateMu  sync.Mutex
 	songsMu          sync.RWMutex
 	cachedTermWidth  int
@@ -119,7 +120,10 @@ func (a *App) loadMusic() {
 	var songs []domain.Song
 	var err error
 
-	if a.songSource == 0 {
+	a.songsMu.RLock()
+	src := a.songSource
+	a.songsMu.RUnlock()
+	if src == 0 {
 		songs, err = a.library.GetRandomSongs(loadSize)
 	} else {
 		songs, err = a.library.GetAlbumSongs("alphabeticalByName", loadSize/a.cfg.UI.PageSize)
@@ -210,12 +214,12 @@ func (a *App) monitorConnection() {
 	defer ticker.Stop()
 
 	// Initial ping
-	a.serverConnected = a.library.Ping() == nil
+	a.serverConnected.Store(a.library.Ping() == nil)
 
 	for {
 		select {
 		case <-ticker.C:
-			a.serverConnected = a.library.Ping() == nil
+			a.serverConnected.Store(a.library.Ping() == nil)
 		case <-a.ctx.Done():
 			return
 		}
@@ -223,7 +227,9 @@ func (a *App) monitorConnection() {
 }
 
 func (a *App) SortSongs() {
+	a.songsMu.RLock()
 	mode := sortModes[a.sortMode]
+	a.songsMu.RUnlock()
 	if mode.less == nil {
 		return
 	}
@@ -235,7 +241,9 @@ func (a *App) SortSongs() {
 }
 
 func (a *App) cycleSortMode() {
+	a.songsMu.Lock()
 	a.sortMode = (a.sortMode + 1) % len(sortModes)
+	a.songsMu.Unlock()
 	a.SortSongs()
 	a.renderSongTable()
 	a.updateStatusWithPageInfo()
@@ -243,14 +251,18 @@ func (a *App) cycleSortMode() {
 }
 
 func (a *App) cycleSongSource() {
+	a.songsMu.Lock()
 	a.songSource = (a.songSource + 1) % len(songSources)
+	a.songsMu.Unlock()
 	go a.loadMusic()
 	a.updateSortTitle()
 }
 
 func (a *App) updateSortTitle() {
+	a.songsMu.RLock()
 	mode := sortModes[a.sortMode]
 	src := songSources[a.songSource]
+	a.songsMu.RUnlock()
 	if a.rightTitleBar != nil {
 		a.rightTitleBar.SetText(fmt.Sprintf("[#ffb300]── Library  [darkgray][%s · %s]", src.name, mode.name))
 	}
@@ -310,7 +322,7 @@ func (a *App) playSongAtIndex(index int) {
 	a.state.SetPlaying(false)
 
 	loadingStatus := fmt.Sprintf("[#ffb300]%s [darkgray](Loading...)", currentTrack.Title)
-	a.updateStatus(FormatSongInfo(currentTrack, loadingStatus, "", "[darkgray]Vol: [...", a.leftPanelTextWidth(), a.serverConnected, ""))
+	a.updateStatus(FormatSongInfo(currentTrack, loadingStatus, "", "[darkgray]Vol: [...", a.leftPanelTextWidth(), a.serverConnected.Load(), ""))
 
 	go func() {
 		defer a.state.SetLoading(false)
@@ -319,7 +331,7 @@ func (a *App) playSongAtIndex(index int) {
 				log.Printf("playSongAtIndex panic: %v", r)
 				a.state.SetPlaying(false)
 				failedStatus := fmt.Sprintf("[red]%s [darkgray](Failed)", currentTrack.Title)
-				a.updateStatus(FormatSongInfo(currentTrack, failedStatus, "", "[darkgray]Vol: [...", a.leftPanelTextWidth(), a.serverConnected, ""))
+				a.updateStatus(FormatSongInfo(currentTrack, failedStatus, "", "[darkgray]Vol: [...", a.leftPanelTextWidth(), a.serverConnected.Load(), ""))
 			}
 		}()
 
@@ -343,7 +355,7 @@ func (a *App) playSongAtIndex(index int) {
 		a.state.SetPlaying(true)
 
 		playingStatus := fmt.Sprintf("[#ffb300]▶ PLAYING")
-		a.updateStatus(FormatSongInfo(currentTrack, playingStatus, "◴", "[darkgray]Vol: [...", a.leftPanelTextWidth(), a.serverConnected, CreatePlayingExtras(currentTrack, a.leftPanelTextWidth())))
+		a.updateStatus(FormatSongInfo(currentTrack, playingStatus, "◴", "[darkgray]Vol: [...", a.leftPanelTextWidth(), a.serverConnected.Load(), CreatePlayingExtras(currentTrack, a.leftPanelTextWidth())))
 
 		time.Sleep(500 * time.Millisecond)
 	}()
@@ -568,7 +580,7 @@ func (a *App) onAudioDeviceDisconnected() {
 	}
 
 	pausedStatus := fmt.Sprintf("[#ff9800]⏸ PAUSED")
-	statusText := FormatSongInfo(*currentSong, pausedStatus, "◷", "[darkgray]Vol: [...", a.leftPanelTextWidth(), a.serverConnected, "")
+	statusText := FormatSongInfo(*currentSong, pausedStatus, "◷", "[darkgray]Vol: [...", a.leftPanelTextWidth(), a.serverConnected.Load(), "")
 
 	a.tviewApp.QueueUpdateDraw(func() {
 		if a.statusBar != nil {
