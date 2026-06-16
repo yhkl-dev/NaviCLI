@@ -15,23 +15,6 @@ type Client struct {
 	HttpClient *http.Client
 }
 
-type SubsonicResponse struct {
-	Response struct {
-		Status        string `json:"status"`
-		Version       string `json:"version"`
-		Type          string `json:"type"`
-		ServerVersion string `json:"serverVersion"`
-		OpenSubsonic  bool   `json:"openSubsonic"`
-		RandomSongs   struct {
-			Songs []Song `json:"song"`
-		} `json:"randomSongs"`
-		Error struct {
-			Code    int    `json:"code"`
-			Message string `json:"message"`
-		} `json:"error,omitempty"`
-	} `json:"subsonic-response"`
-}
-
 type AlbumID3 struct {
 	ID       string `json:"id"`
 	Name     string `json:"name"`

@@ -9,12 +9,6 @@ type KeyAction struct {
 	handler func()
 }
 
-type KeyBinding struct {
-	action KeyAction
-	keys   []tcell.Key // for special keys like arrows, pgdn, etc.
-	runes  []rune      // for character keys
-}
-
 type KeyBindingManager struct {
 	bindings  map[tcell.Key]KeyAction // special key -> action mapping
 	runeMap   map[rune]KeyAction      // rune -> action mapping
@@ -84,6 +78,3 @@ func (km *KeyBindingManager) HandleKey(event *tcell.EventKey) bool {
 	return false
 }
 
-func (km *KeyBindingManager) ResetPending() {
-	km.pending = ""
-}

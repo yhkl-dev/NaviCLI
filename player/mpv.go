@@ -98,18 +98,6 @@ func (p *MPVPlayer) SetVolume(volume float64) error {
 	return p.instance.Command([]string{"set", "volume", fmt.Sprintf("%.0f", volume)})
 }
 
-func (p *MPVPlayer) IsPlaying() bool {
-	paused, err := p.IsPaused()
-	if err != nil {
-		return false
-	}
-	loaded, err := p.IsSongLoaded()
-	if err != nil {
-		return false
-	}
-	return loaded && !paused
-}
-
 func (p *MPVPlayer) IsPaused() (bool, error) {
 	if p.instance == nil {
 		return false, fmt.Errorf("MPV instance not initialized")

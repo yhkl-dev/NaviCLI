@@ -1,6 +1,7 @@
 package library
 
 import (
+	"log"
 	"time"
 
 	"github.com/yhkl-dev/NaviCLI/domain"
@@ -25,23 +26,33 @@ func (s *SubsonicLibrary) GetRandomSongs(count int) ([]domain.Song, error) {
 	return convertToDomainSongs(songs), nil
 }
 
-func (s *SubsonicLibrary) GetAlbumSongs(albumType string, size int) ([]domain.Song, error) {
-	if size <= 0 {
-		size = 20
-	}
-	albums, err := s.client.GetAlbumList2(albumType, size)
-	if err != nil {
-		return nil, err
-	}
+func (s *SubsonicLibrary) GetAlbumSongs(albumType string) ([]domain.Song, error) {
+	const batchSize = 50 // albums per paginated fetch
 
 	var allSongs []domain.Song
-	for _, album := range albums {
-		songs, err := s.client.GetAlbum(album.ID)
+	offset := 0
+	for {
+		albums, err := s.client.GetAlbumList2(albumType, batchSize, offset)
 		if err != nil {
-			continue
+			return nil, err
 		}
-		domainSongs := convertToDomainSongs(songs)
-		allSongs = append(allSongs, domainSongs...)
+		if len(albums) == 0 {
+			break
+		}
+
+		for _, album := range albums {
+			songs, err := s.client.GetAlbum(album.ID)
+			if err != nil {
+				log.Printf("skip album %s: %v", album.Name, err)
+				continue
+			}
+			allSongs = append(allSongs, convertToDomainSongs(songs)...)
+		}
+
+		if len(albums) < batchSize {
+			break
+		}
+		offset += batchSize
 	}
 	return allSongs, nil
 }

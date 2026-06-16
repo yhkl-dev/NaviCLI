@@ -147,13 +147,14 @@ func (c *Client) GetPlayURL(songID string) string {
 	return fmt.Sprintf("%s/rest/stream.view?%s", c.BaseURL, params.Encode())
 }
 
-func (c *Client) GetAlbumList2(albumType string, size int) ([]AlbumID3, error) {
+func (c *Client) GetAlbumList2(albumType string, size, offset int) ([]AlbumID3, error) {
 	if size <= 0 {
 		size = 20
 	}
 	params, err := c.buildParams(map[string]string{
-		"type": albumType,
-		"size": fmt.Sprintf("%d", size),
+		"type":   albumType,
+		"size":   fmt.Sprintf("%d", size),
+		"offset": fmt.Sprintf("%d", offset),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build params: %w", err)

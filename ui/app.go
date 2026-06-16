@@ -116,7 +116,7 @@ func (a *App) Stop() {
 }
 
 func (a *App) loadMusic() {
-	loadSize := a.cfg.UI.PageSize * 10
+	fetchSize := a.cfg.UI.FetchSize
 	var songs []domain.Song
 	var err error
 
@@ -124,9 +124,9 @@ func (a *App) loadMusic() {
 	src := a.songSource
 	a.songsMu.RUnlock()
 	if src == 0 {
-		songs, err = a.library.GetRandomSongs(loadSize)
+		songs, err = a.library.GetRandomSongs(fetchSize)
 	} else {
-		songs, err = a.library.GetAlbumSongs("alphabeticalByName", loadSize/a.cfg.UI.PageSize)
+		songs, err = a.library.GetAlbumSongs("alphabeticalByName")
 	}
 
 	if err != nil {
@@ -357,7 +357,9 @@ func (a *App) playSongAtIndex(index int) {
 		playingStatus := fmt.Sprintf("[#ffb300]▶ PLAYING")
 		a.updateStatus(FormatSongInfo(currentTrack, playingStatus, "◴", "[darkgray]Vol: [...", a.leftPanelTextWidth(), a.serverConnected.Load(), CreatePlayingExtras(currentTrack, a.leftPanelTextWidth())))
 
-		time.Sleep(500 * time.Millisecond)
+		a.tviewApp.QueueUpdateDraw(func() {
+			a.renderSongTable()
+		})
 	}()
 }
 
