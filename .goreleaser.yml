@@ -1,0 +1,57 @@
+project_name: navicli
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+    - brew install mpv
+
+builds:
+  - id: navicli
+    main: .
+    binary: navicli
+    ldflags:
+      - -s -w -X main.Version={{ .Version }}
+    env:
+      - CGO_ENABLED=1
+      - CGO_CFLAGS=-I/opt/homebrew/include
+      - CGO_LDFLAGS=-L/opt/homebrew/lib -lmpv
+    goos:
+      - darwin
+    goarch:
+      - arm64
+
+archives:
+  - format: tar.gz
+    name_template: "release"
+    files:
+      - LICENSE*
+      - README*
+
+brews:
+  - name: navicli
+    repository:
+      owner: yhkl-dev
+      name: homebrew-navicli
+    directory: Formula
+    homepage: "https://github.com/yhkl-dev/NaviCLI"
+    description: "A lightweight command line music player for Navidrome"
+    license: "MIT"
+    dependencies:
+      - name: mpv
+    install: |
+      bin.install "navicli"
+    test: |
+      assert_predicate bin/"navicli", :exist?
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^ci:"
+      - "^chore:"
