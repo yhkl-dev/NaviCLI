@@ -132,19 +132,6 @@ func (m *AudioMonitor) monitorLoop() {
 	}
 }
 
-func (m *AudioMonitor) getCurrentAudioDevice() *AudioDeviceInfo {
-	if !m.supported {
-		return nil
-	}
-
-	records := getAudioDeviceRecords()
-	if info := selectCurrentDevice(records); info != nil {
-		return info
-	}
-
-	return m.getAudioDeviceViaOsascript()
-}
-
 func (m *AudioMonitor) getAudioDeviceViaOsascript() *AudioDeviceInfo {
 	if !m.supported {
 		return nil
@@ -503,12 +490,4 @@ func deviceNameMatches(name1, name2 string) bool {
 	}
 
 	return false
-}
-
-func (m *AudioMonitor) GetCurrentDevice() *AudioDeviceInfo {
-	if !m.supported {
-		return nil
-	}
-
-	return m.getCurrentAudioDevice()
 }

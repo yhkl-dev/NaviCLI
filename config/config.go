@@ -17,6 +17,7 @@ type ServerConfig struct {
 
 type UIConfig struct {
 	PageSize         int `mapstructure:"page_size"`
+	FetchSize        int `mapstructure:"fetch_size"`
 	ProgressBarWidth int `mapstructure:"progress_bar_width"`
 	MaxColumnWidth   int `mapstructure:"max_column_width"`
 }
@@ -38,6 +39,7 @@ func DefaultConfig() *Config {
 	return &Config{
 		UI: UIConfig{
 			PageSize:         20,
+			FetchSize:        500,
 			ProgressBarWidth: 30,
 			MaxColumnWidth:   40,
 		},

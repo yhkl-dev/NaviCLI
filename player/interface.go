@@ -26,9 +26,6 @@ type Player interface {
 	// SetVolume sets the volume level (0-100)
 	SetVolume(volume float64) error
 
-	// IsPlaying returns whether audio is currently playing
-	IsPlaying() bool
-
 	// IsPaused returns whether playback is currently paused
 	IsPaused() (bool, error)
 
@@ -53,8 +50,5 @@ type Player interface {
 
 // PlayerConstants defines player state constants
 const (
-	PlayerStopped = iota
-	PlayerPlaying
-	PlayerPaused
-	PlayerError
+	PlayerError = iota + 3
 )

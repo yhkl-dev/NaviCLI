@@ -35,46 +35,7 @@ func FormatDuration(seconds int) string {
 	return fmt.Sprintf("%d:%02d", minutes, secs)
 }
 
-func abs(n int) int {
-	if n < 0 {
-		return -n
-	}
-	return n
-}
-
 // ---- Geek paused extras ----
-
-var specBars = []string{" ", "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"}
-
-func CreateFrozenSpectrum(width int) string {
-	bars := width - 4
-	if bars > 40 {
-		bars = 40
-	}
-	if bars < 10 {
-		bars = 10
-	}
-
-	var row1, row2, row3 string
-	for i := 0; i < bars; i++ {
-		phase1 := (i * 7) % 32
-		phase2 := (i*11 + 8) % 32
-		phase3 := (i*5 + 16) % 32
-
-		v1 := 8 - abs(phase1-16)/2
-		v2 := 8 - abs(phase2-16)/2
-		v3 := 8 - abs(phase3-16)/2
-		if v1 < 0 { v1 = 0 }
-		if v2 < 0 { v2 = 0 }
-		if v3 < 0 { v3 = 0 }
-
-		row1 += specBars[v1]
-		row2 += specBars[v2]
-		row3 += specBars[v3]
-	}
-
-	return fmt.Sprintf("  [#ffb300]%s\n  [#e65100]%s\n  [#5d4037]%s", row1, row2, row3)
-}
 
 func CreateOscilloscope(width int) string {
 	bars := width - 4
@@ -174,51 +135,6 @@ func CreateAudioSpecs(track domain.Song, width int) string {
 	line2 := fmt.Sprintf("%s%s%s", chStr, sizeStr, playStr)
 
 	return fmt.Sprintf("  [#ffb300]%s\n  [gray]%s", line1, line2)
-}
-
-func CreateHexDump(track domain.Song, width int) string {
-	if width < 36 {
-		return CreateGoDebug(track)
-	}
-
-	title := track.Title
-	artist := track.Artist
-	formatStr := strings.ToUpper(track.Suffix)
-
-	lines := []string{
-		hexLine(0x0000, []byte(title)),
-		hexLine(0x0010, []byte(artist)),
-	}
-
-	specData := fmt.Sprintf("%s %dHz %dkbps ch=%d", formatStr, track.SampleRate, track.BitRate, track.ChannelCount)
-	lines = append(lines, hexLine(0x0020, []byte(specData)))
-
-	var result string
-	for _, l := range lines {
-		result += "  [gray]" + l + "\n"
-	}
-	return strings.TrimRight(result, "\n")
-}
-
-func hexLine(addr int, data []byte) string {
-	hexPart := make([]byte, 0, 48)
-	for i, b := range data {
-		if i > 0 && i%8 == 0 {
-			hexPart = append(hexPart, ' ')
-		}
-		hexPart = append(hexPart, fmt.Sprintf("%02X ", b)...)
-	}
-
-	asciiPart := make([]byte, 0, 16)
-	for _, b := range data {
-		if b >= 32 && b < 127 {
-			asciiPart = append(asciiPart, b)
-		} else {
-			asciiPart = append(asciiPart, '.')
-		}
-	}
-
-	return fmt.Sprintf("%04X  %-24s %s", addr, string(hexPart), string(asciiPart))
 }
 
 func CreateGoDebug(track domain.Song) string {

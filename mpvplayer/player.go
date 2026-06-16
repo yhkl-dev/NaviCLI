@@ -41,18 +41,6 @@ func (m *Mpvplayer) GetProgress() (float64, error) {
 	return val, nil
 }
 
-func (m *Mpvplayer) GetDuration() (float64, error) {
-	duration, err := m.GetProperty("duration", mpv.FORMAT_DOUBLE)
-	if err != nil {
-		return 0, err
-	}
-	val, ok := duration.(float64)
-	if !ok {
-		return 0, fmt.Errorf("unexpected type for duration: %T", duration)
-	}
-	return val, nil
-}
-
 func (m *Mpvplayer) GetVolume() (float64, error) {
 	volume, err := m.GetProperty("volume", mpv.FORMAT_DOUBLE)
 	if err != nil {

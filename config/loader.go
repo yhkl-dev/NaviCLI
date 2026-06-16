@@ -15,6 +15,7 @@ func Load() (*Config, error) {
 
 	defaults := DefaultConfig()
 	viper.SetDefault("ui.page_size", defaults.UI.PageSize)
+	viper.SetDefault("ui.fetch_size", defaults.UI.FetchSize)
 	viper.SetDefault("ui.progress_bar_width", defaults.UI.ProgressBarWidth)
 	viper.SetDefault("ui.max_column_width", defaults.UI.MaxColumnWidth)
 	viper.SetDefault("player.http_timeout", defaults.Player.HTTPTimeout)
