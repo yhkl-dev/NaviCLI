@@ -9,9 +9,11 @@ permissions:
   contents: write
 
 jobs:
-  release:
-    runs-on: macos-latest
+  bump-version:
+    runs-on: ubuntu-latest
     if: "!contains(github.event.head_commit.message, 'chore: bump to v')"
+    outputs:
+      version: ${{ steps.bump.outputs.version }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -26,6 +28,7 @@ jobs:
           cache: true
 
       - name: Bump version and tag
+        id: bump
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -38,12 +41,33 @@ jobs:
           NEW_VERSION="${MAJOR}.${MINOR}.${NEW_PATCH}"
 
           echo "$NEW_VERSION" > VERSION
+          echo "version=v${NEW_VERSION}" >> $GITHUB_OUTPUT
           git add VERSION
           git commit -m "chore: bump to v${NEW_VERSION}"
           git tag "v${NEW_VERSION}"
           git push origin main --tags
 
-      - name: Run GoReleaser
+  goreleaser-darwin:
+    needs: bump-version
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Checkout release tag
+        run: |
+          git fetch origin ${{ needs.bump-version.outputs.version }}
+          git checkout ${{ needs.bump-version.outputs.version }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+
+      - name: Run GoReleaser (macOS)
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
@@ -51,3 +75,46 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.TAP_TOKEN }}
+
+  goreleaser-linux:
+    needs: [bump-version, goreleaser-darwin]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Checkout release tag
+        run: |
+          git fetch origin ${{ needs.bump-version.outputs.version }}
+          git checkout ${{ needs.bump-version.outputs.version }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+
+      - name: Install libmpv
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libmpv-dev libgl1-mesa-dev
+
+      - name: Build Linux binaries
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: latest
+          args: release --clean -f .goreleaser-linux.yml --skip=publish
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Linux binaries to release
+        run: |
+          gh release upload ${{ needs.bump-version.outputs.version }} \
+            dist/navicli-linux-amd64.tar.gz \
+            dist/checksums-linux.txt \
+            --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

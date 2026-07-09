@@ -64,13 +64,36 @@ Download the latest pre-built binary from [Releases](https://github.com/yhkl-dev
 
 ```bash
 # For Apple Silicon (M1/M2/M3):
-curl -L https://github.com/yhkl-dev/NaviCLI/releases/latest/download/release.tar.gz -o release.tar.gz
-tar xzf release.tar.gz
-chmod +x navicli-darwin-arm64
-sudo mv navicli-darwin-arm64 /usr/local/bin/navicli
+curl -L https://github.com/yhkl-dev/NaviCLI/releases/latest/download/navicli-darwin-arm64.tar.gz -o navicli.tar.gz
+tar xzf navicli.tar.gz
+chmod +x navicli
+sudo mv navicli /usr/local/bin/
 ```
 
-### Install from Source (Go 1.16+ required)
+### Install for Linux
+Download the latest pre-built binary from [Releases](https://github.com/yhkl-dev/NaviCLI/releases):
+
+```bash
+# For x86_64 (AMD64):
+curl -L https://github.com/yhkl-dev/NaviCLI/releases/latest/download/navicli-linux-amd64.tar.gz -o navicli.tar.gz
+tar xzf navicli.tar.gz
+chmod +x navicli
+sudo mv navicli /usr/local/bin/
+```
+
+**Prerequisite:** MPV must be installed:
+```bash
+# Debian/Ubuntu
+sudo apt install mpv libmpv-dev
+
+# Fedora
+sudo dnf install mpv mpv-libs-devel
+
+# Arch
+sudo pacman -S mpv
+```
+
+### Install from Source (Go 1.24+ required)
 ```bash
 git clone https://github.com/yhkl-dev/NaviCLI.git
 cd NaviCLI
@@ -178,7 +201,8 @@ go test ./...
 - [ ] Add playlist support
 - [ ] Add favorites/bookmarking
 - [ ] Add shuffle/repeat modes
-- [ ] Cross-platform builds (Linux/Windows)
+- [x] Cross-platform builds (Linux)
+- [ ] Cross-platform builds (Windows)
 
 ## Contributing
 PRs are welcome! Please open an issue first to discuss what you'd like to change.
