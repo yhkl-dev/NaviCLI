@@ -40,7 +40,7 @@ brews:
     dependencies:
       - name: mpv
     install: |
-      bin.install "navicli-darwin-arm64" => "navicli"
+      bin.install "navicli"
     test: |
       assert_predicate bin/"navicli", :exist?
 
