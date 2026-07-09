@@ -23,7 +23,7 @@ builds:
 
 archives:
   - format: tar.gz
-    name_template: "release"
+    name_template: "navicli-{{ .Os }}-{{ .Arch }}"
     files:
       - LICENSE*
       - README*

@@ -1,0 +1,38 @@
+project_name: navicli
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: navicli
+    main: .
+    binary: navicli
+    ldflags:
+      - -s -w -X main.Version={{ .Version }}
+    env:
+      - CGO_ENABLED=1
+    goos:
+      - linux
+    goarch:
+      - amd64
+
+archives:
+  - format: tar.gz
+    name_template: "navicli-{{ .Os }}-{{ .Arch }}"
+    files:
+      - LICENSE*
+      - README*
+
+checksum:
+  name_template: checksums-linux.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^ci:"
+      - "^chore:"
