@@ -93,7 +93,7 @@ sudo dnf install mpv mpv-libs-devel
 sudo pacman -S mpv
 ```
 
-### Install from Source (Go 1.16+ required)
+### Install from Source (Go 1.24+ required)
 ```bash
 git clone https://github.com/yhkl-dev/NaviCLI.git
 cd NaviCLI

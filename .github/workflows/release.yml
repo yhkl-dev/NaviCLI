@@ -56,6 +56,11 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Checkout release tag
+        run: |
+          git fetch origin ${{ needs.bump-version.outputs.version }}
+          git checkout ${{ needs.bump-version.outputs.version }}
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
@@ -72,13 +77,18 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.TAP_TOKEN }}
 
   goreleaser-linux:
-    needs: goreleaser-darwin
+    needs: [bump-version, goreleaser-darwin]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Checkout release tag
+        run: |
+          git fetch origin ${{ needs.bump-version.outputs.version }}
+          git checkout ${{ needs.bump-version.outputs.version }}
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -96,7 +106,7 @@ jobs:
         with:
           distribution: goreleaser
           version: latest
-          args: build --clean -f .goreleaser-linux.yml
+          args: release --clean -f .goreleaser-linux.yml --skip=publish
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
