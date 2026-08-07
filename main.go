@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"io"
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"sync"
 	"syscall"
 	"time"
@@ -48,6 +50,11 @@ func main() {
 
 	app := ui.NewApp(ctx, cfg, lib, plr)
 
+	// Logs default to stderr, which corrupts the terminal UI. Send them to a
+	// file instead so the TUI stays clean. Best-effort: discard on failure.
+	// Pre-Run fatals (config/ping/player) above still go to stderr.
+	redirectLogs()
+
 	var cleanupOnce sync.Once
 	cleanup := func() {
 		cancel()
@@ -81,4 +88,26 @@ func main() {
 
 	log.Println("Program exit.")
 	os.Exit(0)
+}
+
+// redirectLogs sends log output to a cache file so it does not corrupt the
+// terminal UI while tview is running. Falls back to discarding logs if the
+// file cannot be opened.
+func redirectLogs() {
+	dir, err := os.UserCacheDir()
+	if err != nil {
+		log.SetOutput(io.Discard)
+		return
+	}
+	dir = filepath.Join(dir, "navicli")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		log.SetOutput(io.Discard)
+		return
+	}
+	f, err := os.OpenFile(filepath.Join(dir, "navicli.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		log.SetOutput(io.Discard)
+		return
+	}
+	log.SetOutput(f)
 }

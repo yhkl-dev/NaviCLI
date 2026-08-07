@@ -2,7 +2,6 @@ package mpvplayer
 
 import (
 	"fmt"
-	"sync"
 
 	"github.com/wildeyedskies/go-mpv/mpv"
 )
@@ -14,19 +13,9 @@ const (
 	PlayerError
 )
 
-type QueueItem struct {
-	Id       string
-	Uri      string
-	Title    string
-	Artist   string
-	Duration int
-}
-
 type Mpvplayer struct {
 	*mpv.Mpv
 	EventChannel chan *mpv.Event
-	Queue        []QueueItem
-	QueueMu      sync.Mutex
 }
 
 func (m *Mpvplayer) GetProgress() (float64, error) {
@@ -90,35 +79,25 @@ func (m *Mpvplayer) Pause() (int, error) {
 	if err != nil {
 		return PlayerError, err
 	}
+	if !loaded {
+		return PlayerStopped, nil
+	}
 	pause, err := m.IsPaused()
 	if err != nil {
 		return PlayerError, err
 	}
-
-	if loaded {
-		err := m.Command([]string{"cycle", "pause"})
-		if err != nil {
-			return PlayerError, err
-		}
-		if pause {
-			return PlayerPlaying, nil
-		}
-		return PlayerPaused, nil
-	} else {
-		m.QueueMu.Lock()
-		hasQueue := len(m.Queue) != 0
-		var uri string
-		if hasQueue {
-			uri = m.Queue[0].Uri
-		}
-		m.QueueMu.Unlock()
-		if hasQueue {
-			err := m.Command([]string{"loadfile", uri})
-			return PlayerPlaying, err
-		} else {
-			return PlayerStopped, nil
-		}
+	if err := m.Command([]string{"cycle", "pause"}); err != nil {
+		return PlayerError, err
 	}
+	if pause {
+		return PlayerPlaying, nil
+	}
+	return PlayerPaused, nil
+}
+
+// Seek skips by the given number of seconds via mpv's relative seek command.
+func (m *Mpvplayer) Seek(seconds float64) error {
+	return m.Command([]string{"seek", fmt.Sprintf("%g", seconds)})
 }
 
 func CreateMPVInstance() (*mpv.Mpv, error) {

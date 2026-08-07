@@ -23,28 +23,26 @@ func (a *App) createHomepage() {
 	a.statusBar.SetBorder(false)
 
 	a.searchInput = tview.NewInputField().
-		SetLabel("[#ffb300]Search: ").
+		SetLabel("[" + tagFgFaint + "]/ ").
 		SetFieldWidth(0).
-		SetPlaceholder("Type to search, ESC to clear, ENTER to filter...").
+		SetPlaceholder("search").
 		SetFieldBackgroundColor(tcell.ColorDefault)
 	a.searchInput.SetBorder(false)
 
 	a.songTable = tview.NewTable().
 		SetBorders(false).
 		SetSelectable(true, false).
-		SetFixed(1, 0)
+		SetFixed(0, 0)
 	a.songTable.SetBorder(false)
 
 	a.helpView = NewHelpView(a)
-	a.queueView = NewQueueView(a)
 
-	a.setupTableHeaders()
 	a.setupSearchInput()
 	a.setupInputHandlers()
 
 	a.leftTitleBar = tview.NewTextView().
 		SetDynamicColors(true).
-		SetText("[#ffb300]── Now Playing ")
+		SetText("[" + tagFg + "]Now playing")
 
 	leftPanel := tview.NewFlex().
 		SetDirection(tview.FlexRow).
@@ -53,12 +51,14 @@ func (a *App) createHomepage() {
 
 	a.rightTitleBar = tview.NewTextView().
 		SetDynamicColors(true).
-		SetText("[#ffb300]── Library ")
+		SetText("[" + tagFg + "]Library")
 
 	rightPanel := tview.NewFlex().
 		SetDirection(tview.FlexRow).
 		AddItem(a.rightTitleBar, 1, 0, false).
+		AddItem(nil, 1, 0, false).
 		AddItem(a.searchInput, 1, 0, false).
+		AddItem(nil, 1, 0, false).
 		AddItem(a.songTable, 0, 1, true)
 
 	mainLayout := tview.NewFlex().
@@ -72,16 +72,10 @@ func (a *App) createHomepage() {
 		AddItem(a.progressBar, 3, 0, false)
 
 	a.tviewApp.SetRoot(a.rootFlex, true)
-}
 
-func (a *App) setupTableHeaders() {
-	headerStyle := tcell.StyleDefault.Foreground(tcell.NewHexColor(0xffb300)).Attributes(tcell.AttrBold)
-
-	a.songTable.SetCell(0, 0, tview.NewTableCell("#").SetStyle(headerStyle).SetAlign(tview.AlignRight))
-	a.songTable.SetCell(0, 1, tview.NewTableCell("Title").SetStyle(headerStyle).SetExpansion(1))
-	a.songTable.SetCell(0, 2, tview.NewTableCell("Duration").SetStyle(headerStyle).SetAlign(tview.AlignRight))
-	a.songTable.SetCell(0, 3, tview.NewTableCell("Artist").SetStyle(headerStyle))
-	a.songTable.SetCell(0, 4, tview.NewTableCell("Album").SetStyle(headerStyle))
+	// Render the title bars with sort mode + connection dot. Without this the
+	// headers stay bare until the first sort cycle or connection change.
+	a.updateSortTitle()
 }
 
 func (a *App) setupSearchInput() {
@@ -119,13 +113,13 @@ func (a *App) setupSearchInput() {
 
 func (a *App) setupInputHandlers() {
 	a.songTable.SetSelectedFunc(func(row, column int) {
-		if row > 0 {
+		if row >= 0 {
 			_, _, _, loading := a.state.GetState()
 			if loading {
 				return
 			}
 			startIndex := (a.currentPage - 1) * a.pageSize
-			globalIndex := startIndex + (row - 1)
+			globalIndex := startIndex + row/2
 			if globalIndex < len(a.totalSongs) {
 				go a.playSongAtIndex(globalIndex)
 			}
@@ -205,6 +199,18 @@ func (a *App) setupKeyBindings() {
 	)
 
 	km.RegisterKeyBinding(
+		KeyAction{name: "seekBack", handler: a.seekBackward},
+		[]tcell.Key{},
+		[]rune{','},
+	)
+
+	km.RegisterKeyBinding(
+		KeyAction{name: "seekForward", handler: a.seekForward},
+		[]tcell.Key{},
+		[]rune{'.'},
+	)
+
+	km.RegisterKeyBinding(
 		KeyAction{name: "search", handler: func() {
 			a.tviewApp.SetFocus(a.searchInput)
 		}},
@@ -219,21 +225,15 @@ func (a *App) setupKeyBindings() {
 	)
 
 	km.RegisterKeyBinding(
-		KeyAction{name: "queue", handler: a.showQueue},
-		[]tcell.Key{},
-		[]rune{'q', 'Q'},
-	)
-
-	km.RegisterKeyBinding(
 		KeyAction{name: "sort", handler: a.cycleSortMode},
 		[]tcell.Key{},
 		[]rune{'s'},
 	)
 
 	km.RegisterKeyBinding(
-		KeyAction{name: "source", handler: a.cycleSongSource},
+		KeyAction{name: "repeat", handler: a.cycleRepeat},
 		[]tcell.Key{},
-		[]rune{'S'},
+		[]rune{'r'},
 	)
 }
 
@@ -242,13 +242,6 @@ func (a *App) setupGlobalInputHandler() {
 		if a.helpView != nil && a.helpView.IsActive() {
 			if event.Key() == tcell.KeyEscape || event.Rune() == '?' {
 				a.helpView.Close()
-				return nil
-			}
-			return event
-		}
-		if a.queueView != nil && a.queueView.IsActive() {
-			if event.Key() == tcell.KeyEscape || event.Rune() == 'q' || event.Rune() == 'Q' {
-				a.queueView.Close()
 				return nil
 			}
 			return event
@@ -333,7 +326,7 @@ func (a *App) performSearch(query string) {
 		songs, err := a.library.SearchSongs(query, 100)
 		if err != nil {
 			a.tviewApp.QueueUpdateDraw(func() {
-				a.statusBar.SetText(fmt.Sprintf("[red]Search failed: %v", err))
+				a.statusBar.SetText(fmt.Sprintf("["+tagDanger+"]Search failed: %v", err))
 			})
 			return
 		}
@@ -373,93 +366,72 @@ func (a *App) clearSearch() {
 }
 
 func (a *App) renderSongTable() {
-	for i := a.songTable.GetRowCount() - 1; i > 0; i-- {
+	for i := a.songTable.GetRowCount() - 1; i >= 0; i-- {
 		a.songTable.RemoveRow(i)
 	}
-	a.setupTableHeaders()
-	pageData := a.getCurrentPageData()
-	startIndex := (a.currentPage - 1) * a.pageSize
 	termWidth := a.getTerminalWidth()
+	pageData := a.getCurrentPageData()
 
 	currentSong, _, isPlaying, _ := a.state.GetState()
 
+	// Cap the title/artist column so a long title cannot push the Time column
+	// off-screen. The table fills ~3/4 of the terminal; reserve the indicator
+	// (1) and Time (6) columns plus padding.
+	titleMax := termWidth*3/4 - 8
+	if titleMax < 10 {
+		titleMax = 10
+	}
+
 	for i, song := range pageData {
-		row := i + 1
-		globalIndex := startIndex + i + 1
-
+		titleRow := 2 * i
+		metaRow := 2*i + 1
 		isCurrentTrack := isPlaying && currentSong != nil && currentSong.ID == song.ID
-		rowStyle := tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorDefault)
-		trackColor := tcell.NewHexColor(0xffb300)
-		titleColor := tcell.ColorWhite
+
+		rowStyle := tcell.StyleDefault.Foreground(colFg).Background(tcell.ColorDefault)
+		indicator := " "
+		indicatorColor := colFgDim
+		titleColor := colFg
 		if isCurrentTrack {
-			trackColor = tcell.ColorLightGreen
-			titleColor = tcell.ColorLightGreen
+			indicator = "▶"
+			indicatorColor = colAccent
+			titleColor = colAccent
 		}
 
-		trackText := fmt.Sprintf("%d:", globalIndex)
-		if isCurrentTrack {
-			trackText = "▶"
-		}
-
-		trackCell := tview.NewTableCell(trackText).
-			SetStyle(rowStyle.Foreground(trackColor)).
-			SetAlign(tview.AlignRight)
-
-		titleCell := tview.NewTableCell(song.Title).
-			SetStyle(rowStyle.Foreground(titleColor)).
-			SetExpansion(1)
-
-		col := 0
-		a.songTable.SetCell(row, col, trackCell)
-		col++
-		a.songTable.SetCell(row, col, titleCell)
-		col++
-
-		if termWidth >= 50 {
-			durColor := tcell.ColorGray
+		// Title row: marker, title, time.
+		a.songTable.SetCell(titleRow, 0, tview.NewTableCell(indicator).
+			SetStyle(rowStyle.Foreground(indicatorColor)))
+		a.songTable.SetCell(titleRow, 1, tview.NewTableCell(song.Title).
+			SetStyle(rowStyle.Foreground(titleColor).Attributes(tcell.AttrBold)).
+			SetExpansion(1).
+			SetMaxWidth(titleMax))
+		if termWidth >= 40 {
+			durColor := colFgDim
 			if isCurrentTrack {
-				durColor = tcell.ColorLightGreen
+				durColor = colAccent
 			}
-			durationCell := tview.NewTableCell(FormatDuration(song.Duration)).
+			a.songTable.SetCell(titleRow, 2, tview.NewTableCell(FormatDuration(song.Duration)).
 				SetStyle(rowStyle.Foreground(durColor)).
-				SetAlign(tview.AlignRight)
-			a.songTable.SetCell(row, col, durationCell)
-			col++
+				SetAlign(tview.AlignRight))
 		}
 
-		if termWidth >= 60 {
-			artistWidth := termWidth / 6
-			if artistWidth < 12 {
-				artistWidth = 12
+		// Meta row: artist · album, faint and indented under the title.
+		meta := song.Artist
+		if song.Album != "" {
+			if meta != "" {
+				meta += "  ·  "
 			}
-			if artistWidth > 30 {
-				artistWidth = 30
-			}
-			artistCell := tview.NewTableCell(song.Artist).
-				SetStyle(rowStyle.Foreground(tcell.ColorGray)).
-				SetMaxWidth(artistWidth)
-			a.songTable.SetCell(row, col, artistCell)
-			col++
+			meta += song.Album
 		}
-
-		if termWidth >= 70 {
-			albumWidth := termWidth / 6
-			if albumWidth < 12 {
-				albumWidth = 12
-			}
-			if albumWidth > 30 {
-				albumWidth = 30
-			}
-			albumCell := tview.NewTableCell(song.Album).
-				SetStyle(rowStyle.Foreground(tcell.ColorGray)).
-				SetMaxWidth(albumWidth)
-			a.songTable.SetCell(row, col, albumCell)
-		}
+		a.songTable.SetCell(metaRow, 0, tview.NewTableCell(" ").SetStyle(rowStyle))
+		a.songTable.SetCell(metaRow, 1, tview.NewTableCell("  "+meta).
+			SetStyle(rowStyle.Foreground(colFgFaint)).
+			SetExpansion(1).
+			SetMaxWidth(titleMax))
 	}
 
 	a.songTable.SetSelectedStyle(tcell.StyleDefault.
-		Background(tcell.NewHexColor(0xffb300)).
-		Foreground(tcell.ColorWhite))
+		Background(colSelection).
+		Foreground(colFg))
 
 	a.songTable.ScrollToBeginning()
 }
@@ -515,38 +487,33 @@ func (a *App) updateIdleDisplay() {
 func (a *App) updatePausedDisplay(song *domain.Song) {
 	a.tviewApp.QueueUpdateDraw(func() {
 		if a.progressBar != nil && a.statusBar != nil {
-			currentPos, totalDuration, err := a.player.GetProgress()
-			if err != nil || totalDuration <= 0 {
-				totalDuration = float64(song.Duration)
+			currentPos, _, err := a.player.GetProgress()
+			if err != nil || currentPos < 0 {
 				currentPos = 0
 			}
 
+			totalDuration := float64(song.Duration)
 			currentTime := FormatDuration(int(currentPos))
-			totalTime := FormatDuration(int(totalDuration))
+			totalTime := FormatDuration(song.Duration)
 
-			progress := currentPos / totalDuration
+			progress := 0.0
+			if totalDuration > 0 {
+				progress = currentPos / totalDuration
+			}
 			if progress > 1 {
 				progress = 1
-			} else if progress < 0 {
-				progress = 0
 			}
 
-			volumeText := "??"
 			volumeVal := 0.0
 			if vol, err := a.player.GetVolume(); err == nil {
-				volumeText = fmt.Sprintf("%.0f%%", vol)
 				volumeVal = vol
 			}
 
 			spinner := SpinnerChar(int(a.tickCount.Load()))
-			volBar := CreateVolumeBar(volumeVal, 10)
-
-			bottomBar := CreateBottomBar(progress, a.cfg.UI.ProgressBarWidth, currentTime, totalTime, volumeText,
-				"[#ff9800]⏸ PAUSED", spinner)
+			bottomBar := CreateBottomBar(progress, a.cfg.UI.ProgressBarWidth, currentTime, totalTime, volumeVal,
+				"["+tagWarn+"]⏸ PAUSED", spinner)
 			a.progressBar.SetText(bottomBar)
-
-			pausedStatus := fmt.Sprintf("[#ff9800]⏸ PAUSED")
-			a.statusBar.SetText(FormatSongInfo(*song, pausedStatus, spinner, volBar, a.leftPanelTextWidth(), a.serverConnected.Load(), CreatePausedExtras(*song, a.leftPanelTextWidth())))
+			a.statusBar.SetText(a.nowPlaying(*song, CreateTrackExtras(*song)))
 		}
 	})
 }
@@ -562,41 +529,39 @@ func (a *App) updatePlayingDisplay(song *domain.Song) {
 		return
 	}
 
-	currentPos, totalDuration, err := a.player.GetProgress()
-	if err != nil || totalDuration <= 0 || currentPos < 0 {
+	currentPos, _, err := a.player.GetProgress()
+	if err != nil || currentPos < 0 {
+		return
+	}
+
+	totalDuration := float64(song.Duration)
+	if totalDuration <= 0 {
 		return
 	}
 
 	currentTime := FormatDuration(int(currentPos))
-	totalTime := FormatDuration(int(totalDuration))
+	totalTime := FormatDuration(song.Duration)
 
 	progress := currentPos / totalDuration
 	if progress > 1 {
 		progress = 1
-	} else if progress < 0 {
-		progress = 0
 	}
 
-	volumeText := "??"
 	volumeVal := 0.0
 	if vol, err := a.player.GetVolume(); err == nil {
-		volumeText = fmt.Sprintf("%.0f%%", vol)
 		volumeVal = vol
 	}
 
 	spinner := SpinnerChar(int(a.tickCount.Load()))
-	volBar := CreateVolumeBar(volumeVal, 10)
-
-	bottomBar := CreateBottomBar(progress, a.cfg.UI.ProgressBarWidth, currentTime, totalTime, volumeText,
-		"[#ffb300]▶ PLAYING", spinner)
-	playingStatus := fmt.Sprintf("[#ffb300]▶ PLAYING")
+	bottomBar := CreateBottomBar(progress, a.cfg.UI.ProgressBarWidth, currentTime, totalTime, volumeVal,
+		"["+tagAccent+"]▶ PLAYING", spinner)
 
 	a.tviewApp.QueueUpdateDraw(func() {
 		if a.progressBar != nil {
 			a.progressBar.SetText(bottomBar)
 		}
 		if a.statusBar != nil {
-			a.statusBar.SetText(FormatSongInfo(*song, playingStatus, spinner, volBar, a.leftPanelTextWidth(), a.serverConnected.Load(), CreatePlayingExtras(*song, a.leftPanelTextWidth())))
+			a.statusBar.SetText(a.nowPlaying(*song, CreateTrackExtras(*song)))
 		}
 	})
 }
@@ -618,23 +583,4 @@ func (a *App) showHelp() {
 
 	a.tviewApp.SetRoot(modal, true)
 	a.helpView.Show()
-}
-
-func (a *App) showQueue() {
-	if a.queueView == nil {
-		return
-	}
-
-	modal := tview.NewFlex().
-		SetDirection(tview.FlexRow).
-		AddItem(nil, 0, 1, false).
-		AddItem(tview.NewFlex().
-			SetDirection(tview.FlexColumn).
-			AddItem(nil, 0, 1, false).
-			AddItem(a.queueView.GetContainer(), 80, 0, true).
-			AddItem(nil, 0, 1, false), 20, 0, true).
-		AddItem(nil, 0, 1, false)
-
-	a.tviewApp.SetRoot(modal, true)
-	a.queueView.Show()
 }

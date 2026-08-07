@@ -1,6 +1,7 @@
 package library
 
 import (
+	"fmt"
 	"log"
 	"time"
 
@@ -18,47 +19,73 @@ func NewSubsonicLibrary(client *subsonic.Client) *SubsonicLibrary {
 	}
 }
 
-func (s *SubsonicLibrary) GetRandomSongs(count int) ([]domain.Song, error) {
-	songs, err := s.client.GetRandomSongs(count)
-	if err != nil {
-		return nil, err
-	}
-	return convertToDomainSongs(songs), nil
-}
+// GetAllSongs fetches every song in the library: it paginates the album list,
+// then fetches each album's tracks concurrently (8 workers) so a few hundred
+// albums do not become a few hundred sequential requests.
+func (s *SubsonicLibrary) GetAllSongs() ([]domain.Song, error) {
+	const (
+		batchSize   = 50
+		concurrency = 8
+	)
 
-func (s *SubsonicLibrary) GetAlbumSongs(albumType string) ([]domain.Song, error) {
-	const batchSize = 50 // albums per paginated fetch
-
-	var allSongs []domain.Song
+	type albumRef struct{ id, name string }
+	var albums []albumRef
 	offset := 0
 	for {
-		albums, err := s.client.GetAlbumList2(albumType, batchSize, offset)
+		batch, err := s.client.GetAlbumList2("alphabeticalByName", batchSize, offset)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("getAlbumList2: %w", err)
 		}
-		if len(albums) == 0 {
+		if len(batch) == 0 {
 			break
 		}
-
-		for _, album := range albums {
-			songs, err := s.client.GetAlbum(album.ID)
-			if err != nil {
-				log.Printf("skip album %s: %v", album.Name, err)
-				continue
-			}
-			allSongs = append(allSongs, convertToDomainSongs(songs)...)
+		for _, a := range batch {
+			albums = append(albums, albumRef{id: a.ID, name: a.Name})
 		}
-
-		if len(albums) < batchSize {
+		if len(batch) < batchSize {
 			break
 		}
 		offset += batchSize
+	}
+
+	jobs := make(chan albumRef, len(albums))
+	for _, a := range albums {
+		jobs <- a
+	}
+	close(jobs)
+
+	type result struct {
+		songs []domain.Song
+		err   error
+	}
+	results := make(chan result, len(albums))
+	for i := 0; i < concurrency; i++ {
+		go func() {
+			for a := range jobs {
+				songs, err := s.client.GetAlbum(a.id)
+				if err != nil {
+					results <- result{err: fmt.Errorf("album %s: %w", a.name, err)}
+					continue
+				}
+				results <- result{songs: convertToDomainSongs(songs)}
+			}
+		}()
+	}
+
+	allSongs := make([]domain.Song, 0, len(albums)*10)
+	for i := 0; i < len(albums); i++ {
+		r := <-results
+		if r.err != nil {
+			log.Printf("skip album: %v", r.err)
+			continue
+		}
+		allSongs = append(allSongs, r.songs...)
 	}
 	return allSongs, nil
 }
 
 func (s *SubsonicLibrary) SearchSongs(query string, limit int) ([]domain.Song, error) {
-	songs, err := s.client.SearchSongs(query)
+	songs, err := s.client.SearchSongs(query, limit)
 	if err != nil {
 		return nil, err
 	}

@@ -1,7 +1,8 @@
 package ui
 
 import (
-	"github.com/gdamore/tcell/v2"
+	"strings"
+
 	"github.com/rivo/tview"
 )
 
@@ -22,18 +23,23 @@ func NewHelpView(app *App) *HelpView {
 		SetScrollable(true).
 		SetWrap(true)
 
-	helpText := `[#ffb300::b]Keyboard Shortcuts[-:-:-]
+	// [$h] tokens bind to the primary text color so the help text never
+	// hardcodes a hex value; the prefix match covers both [$h] and [$h::b]
+	// (the bold title).
+	helpText := strings.ReplaceAll(`[$h::b]Keyboard shortcuts[-:-:-]
 
-[#ffb300]Playback Controls:[-]
+[$h]Playback controls[-]
   [white]Space[-]       Play/Pause current song
   [white]Enter[-]       Play selected song
   [white]n / N / l[-]   Next song
   [white]p / P / h[-]   Previous song
-  [white]→ / ←[-]       Next/Previous song (arrow keys)
+  [white]-> / ←[-]       Next/Previous song (arrow keys)
   [white]+ / =[-]       Volume up (+5%)
   [white]- / _[-]       Volume down (-5%)
+  [white], / .[-]       Seek -10s / +10s
+  [white]r[-]           Repeat: off / all / one
 
-[#ffb300]Navigation (Vim-style):[-]
+[$h]Navigation (Vim-style)[-]
   [white]j / ↓[-]       Move down in list
   [white]k / ↑[-]       Move up in list
   [white]J / PgDn[-]    Next page
@@ -43,19 +49,17 @@ func NewHelpView(app *App) *HelpView {
   [white]gg[-]          Go to first page
   [white]G[-]           Go to last page
 
-[#ffb300]Search & Info:[-]
+[$h]Search & info[-]
   [white]/[-]           Open search
   [white]s[-]           Sort: Random / Title / Artist / Album
-  [white]S[-]           Source: Random / Albums
   [white]?[-]           Show this help panel
-  [white]q / Q[-]       Show playback queue
 
-[#ffb300]General:[-]
+[$h]General[-]
   [white]ESC[-]         Close modal / Exit program
   [white]Ctrl+C[-]      Exit program
 
-[#ffb300]Press ESC or ? to close this help panel[-]
-`
+[$h]Press ESC or ? to close this help panel[-]
+`, "[$h", "["+tagFg)
 
 	hv.textView.SetText(helpText)
 
@@ -65,8 +69,8 @@ func NewHelpView(app *App) *HelpView {
 
 	hv.container.SetBorder(true).
 		SetTitle(" Help (ESC to close) ").
-		SetBorderColor(tcell.NewHexColor(0xffb300)).
-		SetTitleColor(tcell.NewHexColor(0xffb300))
+		SetBorderColor(colFgDim).
+		SetTitleColor(colAccent)
 
 	return hv
 }

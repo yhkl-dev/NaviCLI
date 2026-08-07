@@ -28,14 +28,6 @@ type Song struct {
 	SampleRate   int
 }
 
-type QueueItem struct {
-	ID       string
-	URI      string
-	Title    string
-	Artist   string
-	Duration int // in seconds
-}
-
 type PlayerState struct {
 	currentSong      *Song
 	currentSongIndex int

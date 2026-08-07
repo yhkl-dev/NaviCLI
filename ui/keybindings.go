@@ -77,4 +77,3 @@ func (km *KeyBindingManager) HandleKey(event *tcell.EventKey) bool {
 	km.pending = ""
 	return false
 }
-
