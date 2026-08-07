@@ -2,11 +2,10 @@ package player
 
 import (
 	"github.com/wildeyedskies/go-mpv/mpv"
-	"github.com/yhkl-dev/NaviCLI/domain"
 )
 
-// Player defines the interface for audio playback operations
-// This abstraction allows NaviCLI to work with different media players (MPV, VLC, etc.)
+// Player defines the interface for audio playback operations.
+// This abstraction allows NaviCLI to work with different media players.
 type Player interface {
 	// Play starts playback of the given URL
 	Play(url string) error
@@ -26,20 +25,14 @@ type Player interface {
 	// SetVolume sets the volume level (0-100)
 	SetVolume(volume float64) error
 
+	// Seek skips by the given number of seconds (negative rewinds)
+	Seek(seconds float64) error
+
 	// IsPaused returns whether playback is currently paused
 	IsPaused() (bool, error)
 
 	// IsSongLoaded returns whether a song is currently loaded
 	IsSongLoaded() (bool, error)
-
-	// AddToQueue adds an item to the playback queue
-	AddToQueue(item domain.QueueItem)
-
-	// GetQueue returns the current playback queue
-	GetQueue() []domain.QueueItem
-
-	// ClearQueue clears the playback queue
-	ClearQueue()
 
 	// EventChannel returns a channel for receiving player events
 	EventChannel() <-chan *mpv.Event

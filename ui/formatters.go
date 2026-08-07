@@ -7,327 +7,179 @@ import (
 	"github.com/yhkl-dev/NaviCLI/domain"
 )
 
-var brailleBits = [8]uint{0x01, 0x02, 0x04, 0x40, 0x08, 0x10, 0x20, 0x80}
-
 var spinnerFrames = []string{"◴", "◷", "◶", "◵"}
-
-func brailleForFill(n int) rune {
-	if n <= 0 {
-		return 0x2800
-	}
-	if n > 8 {
-		n = 8
-	}
-	var code uint
-	for i := 0; i < n; i++ {
-		code |= brailleBits[i]
-	}
-	return rune(0x2800 + code)
-}
 
 func SpinnerChar(tick int) string {
 	return spinnerFrames[tick%len(spinnerFrames)]
 }
 
 func FormatDuration(seconds int) string {
-	minutes := seconds / 60
-	secs := seconds % 60
-	return fmt.Sprintf("%d:%02d", minutes, secs)
+	if seconds < 0 {
+		seconds = 0
+	}
+	h := seconds / 3600
+	m := (seconds % 3600) / 60
+	s := seconds % 60
+	if h > 0 {
+		return fmt.Sprintf("%d:%02d:%02d", h, m, s)
+	}
+	return fmt.Sprintf("%d:%02d", m, s)
 }
 
-// ---- Geek paused extras ----
-
-func CreateOscilloscope(width int) string {
-	bars := width - 4
-	if bars > 40 { bars = 40 }
-	if bars < 12 { bars = 12 }
-
-	var row1, row2, row3 strings.Builder
-	for i := 0; i < bars; i++ {
-		phase := float64(i) * 0.5
-		// Composite sine: fundamental + 3rd harmonic
-		v := 3.0*sinApprox(phase) + 1.5*sinApprox(phase*3.0+1.0)
-		level := int((v+4.5)/9.0*7.0 + 0.5)
-		if level < 0 { level = 0 }
-		if level > 7 { level = 7 }
-
-		// Build 3-row column based on level
-		switch {
-		case level <= 1:
-			row1.WriteString(" ")
-			row2.WriteString(" ")
-			row3.WriteRune('─')
-		case level <= 2:
-			row1.WriteString(" ")
-			row2.WriteRune('╰')
-			row3.WriteRune('╭')
-		case level <= 3:
-			row1.WriteRune('╭')
-			row2.WriteRune('│')
-			row3.WriteRune('╰')
-		case level <= 4:
-			row1.WriteRune('╭')
-			row2.WriteRune('│')
-			row3.WriteRune('│')
-		case level <= 5:
-			row1.WriteRune('╭')
-			row2.WriteRune('│')
-			row3.WriteRune('╯')
-		case level <= 6:
-			row1.WriteRune('╭')
-			row2.WriteRune('╰')
-			row3.WriteString(" ")
-		default:
-			row1.WriteRune('╮')
-			row2.WriteString(" ")
-			row3.WriteString(" ")
-		}
+// blockBar renders a 0..1 fraction as a cell-resolution bar of the given
+// width. Filled cells use the teal accent, empty cells a dim teal-tinted
+// tone. One visual language for progress and volume. Coarser than braille
+// but cleaner at small sizes: it reads as a solid bar, not dotted noise.
+func blockBar(fraction float64, width int) string {
+	if width < 4 {
+		width = 4
 	}
-
-	return fmt.Sprintf("  [#ffb300]%s\n  [#e65100]%s\n  [#5d4037]%s",
-		row1.String(), row2.String(), row3.String())
-}
-
-func sinApprox(x float64) float64 {
-	// Bhaskara I sine approximation: accurate enough for visuals
-	x = x - float64(int(x/6.283185307)*6) // mod 2π
-	if x < 0 { x += 6.283185307 }
-	if x > 3.141592653 {
-		return -sinApprox(x - 3.141592653)
-	}
-	return 16.0*x*(3.141592653-x)/(5.0*3.141592653*3.141592653 - 4.0*x*(3.141592653-x))
-}
-
-func CreateAudioSpecs(track domain.Song, width int) string {
-	formatStr := strings.ToUpper(track.Suffix)
-	if formatStr == "" {
-		formatStr = "?"
-	}
-
-	sampleStr := ""
-	if track.SampleRate > 0 {
-		sampleStr = fmt.Sprintf(" · %.1fkHz", float64(track.SampleRate)/1000)
-	}
-
-	bitrateStr := ""
-	if track.BitRate > 0 {
-		bitrateStr = fmt.Sprintf(" · %dkbps", track.BitRate)
-	}
-
-	chStr := "Mono"
-	if track.ChannelCount == 2 {
-		chStr = "Stereo"
-	} else if track.ChannelCount > 2 {
-		chStr = fmt.Sprintf("%dch", track.ChannelCount)
-	}
-
-	sizeStr := ""
-	if track.Size > 0 {
-		sizeStr = fmt.Sprintf(" · %.1f MB", float64(track.Size)/1024/1024)
-	}
-
-	playStr := ""
-	if track.PlayCount > 0 {
-		playStr = fmt.Sprintf(" · %d plays", track.PlayCount)
-	}
-
-	line1 := fmt.Sprintf("%s%s%s", formatStr, sampleStr, bitrateStr)
-	line2 := fmt.Sprintf("%s%s%s", chStr, sizeStr, playStr)
-
-	return fmt.Sprintf("  [#ffb300]%s\n  [gray]%s", line1, line2)
-}
-
-func CreateGoDebug(track domain.Song) string {
-	formatStr := strings.ToUpper(track.Suffix)
-	if formatStr == "" {
-		formatStr = "?"
-	}
-
-	return fmt.Sprintf(
-		"  [darkgray]type Song struct {\n"+
-			"  [gray]    Title:      [white]%q\n"+
-			"  [gray]    Artist:     [white]%q\n"+
-			"  [gray]    Format:     [white]%q\n"+
-			"  [gray]    BitRate:    [white]%d\n"+
-			"  [gray]    SampleRate: [white]%d\n"+
-			"  [gray]    Channels:   [white]%d\n"+
-			"  [gray]    Size:       [white]%.1f MB\n"+
-			"  [darkgray]}",
-		track.Title,
-		track.Artist,
-		formatStr,
-		track.BitRate,
-		track.SampleRate,
-		track.ChannelCount,
-		float64(track.Size)/1024/1024,
-	)
-}
-
-func CreatePlayingExtras(track domain.Song, width int) string {
-	parts := []string{
-		CreateOscilloscope(width),
-		"",
-		CreateAudioSpecs(track, width),
-	}
-	return strings.Join(parts, "\n")
-}
-
-func CreatePausedExtras(track domain.Song, width int) string {
-	parts := []string{
-		CreateOscilloscope(width),
-		"",
-		CreateAudioSpecs(track, width),
-		"",
-		CreateGoDebug(track),
-	}
-	return strings.Join(parts, "\n")
-}
-
-// ---- Song info / progress bar / welcome ----
-
-func FormatSongInfo(track domain.Song, status string, spinner string, volumeBar string, panelWidth int, connected bool, extra string) string {
-	duration := FormatDuration(track.Duration)
-
-	trackInfo := ""
-	if track.Track > 0 {
-		trackInfo = fmt.Sprintf("Track #%d  ", track.Track)
-	}
-
-	sepWidth := panelWidth - 2
-	if sepWidth < 10 {
-		sepWidth = 10
-	}
-	sep := strings.Repeat("─", sepWidth)
-
-	connDot := "[darkgray]● [gray]Disconnected"
-	if connected {
-		connDot = "[green]● [gray]Navidrome connected"
-	}
-
-	extraSection := ""
-	if extra != "" {
-		extraSection = extra + "\n"
-	}
-
-	return fmt.Sprintf(
-		"\n"+
-			"  %s [white]%s\n"+
-			"  [gray]%s\n"+
-			"  [gray]%s  %s· %s\n"+
-			"  [darkgray]%s\n"+
-			"%s"+
-			"  %s\n"+
-			"  %s\n"+
-			"\n"+
-			"  %s\n",
-		spinner,
-		track.Title,
-		track.Artist,
-		track.Album,
-		trackInfo,
-		duration,
-		sep,
-		extraSection,
-		volumeBar,
-		connDot,
-		status,
-	)
-}
-
-func CreateVolumeBar(volume float64, width int) string {
-	if width < 6 {
-		width = 6
-	}
-	filled := int(volume / 100.0 * float64(width))
+	filled := int(fraction * float64(width))
 	if filled > width {
 		filled = width
 	}
 	if filled < 0 {
 		filled = 0
 	}
-
-	var bar string
+	var bar strings.Builder
 	for i := 0; i < width; i++ {
 		if i < filled {
-			bar += "[#ffb300]█"
+			fmt.Fprintf(&bar, "[%s]▰", tagAccent)
 		} else {
-			bar += "[#424242]░"
+			fmt.Fprintf(&bar, "[%s]▱", tagAccentEmpty)
 		}
 	}
-	return fmt.Sprintf("[darkgray]Vol: %s [white]%.0f%%", bar, volume)
+	return bar.String()
+}
+
+// CreateTrackExtras renders the metadata block under the title: artist,
+// album, and honest audio specs (format, sample rate, bitrate, channels, file
+// size, play count). Each field on its own line as "label  value", labels
+// faint and values dim, so the block reads as a definition list instead of a
+// run-on string. Empty fields are omitted. No fake oscilloscope or struct dump.
+func CreateTrackExtras(track domain.Song) string {
+	var lines []string
+	add := func(label, value string) {
+		if value == "" {
+			return
+		}
+		lines = append(lines, fmt.Sprintf("  ["+tagFgFaint+"]%-8s ["+tagFgDim+"]%s", label, value))
+	}
+	add("Artist", track.Artist)
+	add("Album", track.Album)
+	formatStr := strings.ToUpper(track.Suffix)
+	if formatStr == "" {
+		formatStr = "?"
+	}
+	add("Format", formatStr)
+	if track.SampleRate > 0 {
+		add("Rate", fmt.Sprintf("%.1fkHz", float64(track.SampleRate)/1000))
+	}
+	if track.BitRate > 0 {
+		add("Bitrate", fmt.Sprintf("%dkbps", track.BitRate))
+	}
+	chStr := "Mono"
+	if track.ChannelCount == 2 {
+		chStr = "Stereo"
+	} else if track.ChannelCount > 2 {
+		chStr = fmt.Sprintf("%dch", track.ChannelCount)
+	}
+	add("Channels", chStr)
+	if track.Size > 0 {
+		add("Size", fmt.Sprintf("%.1f MB", float64(track.Size)/1024/1024))
+	}
+	if track.PlayCount > 0 {
+		add("Plays", fmt.Sprintf("%d", track.PlayCount))
+	}
+	return strings.Join(lines, "\n")
+}
+
+// FormatSongInfo renders the left "Now Playing" panel: an album cover
+// thumbnail (when loaded), a bold title, then the per-field metadata block
+// (extra). Live state lives in the bottom strip and connection in the title
+// bar, so nothing is shown twice.
+func FormatSongInfo(track domain.Song, panelWidth int, cover, extra string) string {
+	_ = panelWidth
+	coverSection := ""
+	if cover != "" {
+		coverSection = cover + "\n"
+	}
+	extraSection := ""
+	if extra != "" {
+		extraSection = extra + "\n"
+	}
+	return fmt.Sprintf(
+		"\n"+
+			"%s"+
+			"  ["+tagFg+"::b]%s[-:-:-]\n"+
+			"%s",
+		coverSection,
+		track.Title,
+		extraSection,
+	)
+}
+
+func CreateVolumeBar(volume float64, width int) string {
+	if width < 5 {
+		width = 5
+	}
+	return fmt.Sprintf("[%s]vol %s [%s]%.0f%%", tagFgFaint, blockBar(volume/100.0, width), tagFgDim, volume)
 }
 
 func CreateProgressBar(progress float64, width int) string {
 	if width < 10 {
 		width = 10
 	}
-
-	totalDots := width * 8
-	filledDots := int(progress * float64(totalDots))
-	if filledDots > totalDots {
-		filledDots = totalDots
-	}
-	if filledDots < 0 {
-		filledDots = 0
-	}
-
-	var bar string
-	for i := 0; i < width; i++ {
-		dotsBefore := i * 8
-		charFilled := 0
-		if filledDots > dotsBefore {
-			charFilled = filledDots - dotsBefore
-			if charFilled > 8 {
-				charFilled = 8
-			}
-		}
-
-		charRatio := float64(dotsBefore) / float64(totalDots)
-		switch {
-		case charFilled == 8:
-			bar += fmt.Sprintf("[#ffb300]%c", brailleForFill(8))
-		case charFilled > 0:
-			bar += fmt.Sprintf("[#e65100]%c", brailleForFill(charFilled))
-		case charRatio < progress+0.05:
-			bar += fmt.Sprintf("[#5d4037]%c", brailleForFill(0))
-		default:
-			bar += fmt.Sprintf("[#424242]%c", brailleForFill(0))
-		}
-	}
-	return bar
+	return blockBar(progress, width)
 }
 
-func CreateBottomBar(progress float64, width int, currentTime, totalTime, volumeText, statusLabel string, spinner string) string {
+// CreateBottomBar renders the bottom transport strip. Two lines: current
+// time, progress bar, total time on the first; spinner, status, and volume
+// on the second. The only home for live state, so each value appears once.
+// statusLabel arrives pre-colored (teal for playing, amber for paused).
+func CreateBottomBar(progress float64, width int, currentTime, totalTime string, volume float64, statusLabel, spinner string) string {
 	bar := CreateProgressBar(progress, width)
-	pct := fmt.Sprintf("[white]%.1f%%", progress*100)
-
+	volBar := CreateVolumeBar(volume, 5)
 	return fmt.Sprintf(
-		"\n  %s %s\n  [gray]%s  [darkgray]── %s ──  [gray]%s    [darkgray]Vol: [white]%s\n  %s %s\n",
-		bar, pct,
-		currentTime, spinner, totalTime, volumeText,
-		spinner, statusLabel,
+		"\n  [%s]%s %s [%s]%s\n  [%s]%s %s                              %s\n",
+		tagAccent, currentTime,
+		bar,
+		tagFgDim, totalTime,
+		tagFgDim, spinner,
+		statusLabel,
+		volBar,
 	)
 }
 
+// CreateIdleBottomBar renders the bottom strip when nothing is playing.
+// Minimal: a Ready label and the play hint. No rule lines; whitespace
+// carries the structure.
 func CreateIdleBottomBar() string {
-	return fmt.Sprintf(
-		"\n  [darkgray]── [gray]Ready [darkgray]───────────────────────────────────────────────\n" +
-			"  [gray]Select a song and press [white]ENTER[gray] to play\n" +
-			"  [darkgray]──────────────────────────────────────────────────────\n",
-	)
+	return "\n  [" + tagFg + "]Ready\n\n  [" + tagFgFaint + "]Select a song and press [" + tagFg + "]ENTER[" + tagFgFaint + "] to play\n"
 }
 
+// keyHint renders one keybinding as a faint key aligned to 8 cells, followed by
+// its action in primary text. Mirrors the label:value rhythm of the now-playing
+// metadata so the welcome screen reads like the playing view, one item per line.
+func keyHint(key, action string) string {
+	return fmt.Sprintf("  ["+tagFgFaint+"]%-8s ["+tagFg+"]%s\n", key, action)
+}
+
+// CreateWelcomeMessage renders the idle welcome screen: app name, song count,
+// then one keybinding per line. Connection state is shown in the title bar,
+// not here, so it is never duplicated.
 func CreateWelcomeMessage(totalSongs int) string {
 	return fmt.Sprintf(
 		"\n\n"+
-			"  [white]NaviCLI\n"+
-			"  [gray]Terminal Music Player\n"+
+			"  ["+tagFg+"::b]NaviCLI[-:-:-]\n"+
+			"  ["+tagFgDim+"]Terminal music player\n"+
 			"\n"+
-			"  [gray]%d songs loaded\n"+
-			"  [gray]Navidrome connected\n"+
+			"  ["+tagFgDim+"]%d songs loaded\n"+
 			"\n"+
-			"  [darkgray]/ [white]search  [darkgray]? [white]help  [darkgray]q [white]queue\n"+
-			"  [darkgray]j/k [white]navigate  [darkgray]SPACE [white]play\n"+
+			keyHint("/", "search")+
+			keyHint("?", "help")+
+			keyHint("j/k", "navigate")+
+			keyHint("SPACE", "play")+
 			"\n",
 		totalSongs,
 	)

@@ -16,10 +16,10 @@ type Client struct {
 }
 
 type AlbumID3 struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Artist   string `json:"artist"`
-	SongCount int   `json:"songCount"`
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Artist    string `json:"artist"`
+	SongCount int    `json:"songCount"`
 }
 
 type Song struct {

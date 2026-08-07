@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/wildeyedskies/go-mpv/mpv"
-	"github.com/yhkl-dev/NaviCLI/domain"
 	"github.com/yhkl-dev/NaviCLI/mpvplayer"
 )
 
@@ -23,9 +22,8 @@ func NewMPVPlayer(ctx context.Context) (*MPVPlayer, error) {
 
 	player := &MPVPlayer{
 		instance: &mpvplayer.Mpvplayer{
-			Mpv:               mpvInstance,
-			EventChannel:      createEventListener(ctx, mpvInstance),
-			Queue: make([]mpvplayer.QueueItem, 0),
+			Mpv:          mpvInstance,
+			EventChannel: createEventListener(ctx, mpvInstance),
 		},
 	}
 
@@ -38,6 +36,13 @@ func (p *MPVPlayer) Play(url string) error {
 	}
 	p.instance.Play(url)
 	return nil
+}
+
+func (p *MPVPlayer) Seek(seconds float64) error {
+	if p.instance == nil || p.instance.Mpv == nil {
+		return fmt.Errorf("MPV instance not initialized")
+	}
+	return p.instance.Seek(seconds)
 }
 
 func (p *MPVPlayer) Pause() (int, error) {
@@ -110,50 +115,6 @@ func (p *MPVPlayer) IsSongLoaded() (bool, error) {
 		return false, fmt.Errorf("MPV instance not initialized")
 	}
 	return p.instance.IsSongLoaded()
-}
-
-func (p *MPVPlayer) AddToQueue(item domain.QueueItem) {
-	if p.instance == nil {
-		return
-	}
-	p.instance.QueueMu.Lock()
-	p.instance.Queue = append(p.instance.Queue, mpvplayer.QueueItem{
-		Id:       item.ID,
-		Uri:      item.URI,
-		Title:    item.Title,
-		Artist:   item.Artist,
-		Duration: item.Duration,
-	})
-	p.instance.QueueMu.Unlock()
-}
-
-func (p *MPVPlayer) GetQueue() []domain.QueueItem {
-	if p.instance == nil {
-		return []domain.QueueItem{}
-	}
-
-	p.instance.QueueMu.Lock()
-	queue := make([]domain.QueueItem, len(p.instance.Queue))
-	for i, item := range p.instance.Queue {
-		queue[i] = domain.QueueItem{
-			ID:       item.Id,
-			URI:      item.Uri,
-			Title:    item.Title,
-			Artist:   item.Artist,
-			Duration: item.Duration,
-		}
-	}
-	p.instance.QueueMu.Unlock()
-	return queue
-}
-
-func (p *MPVPlayer) ClearQueue() {
-	if p.instance == nil {
-		return
-	}
-	p.instance.QueueMu.Lock()
-	p.instance.Queue = make([]mpvplayer.QueueItem, 0)
-	p.instance.QueueMu.Unlock()
 }
 
 func (p *MPVPlayer) EventChannel() <-chan *mpv.Event {

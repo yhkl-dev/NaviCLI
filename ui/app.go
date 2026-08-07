@@ -3,7 +3,10 @@ package ui
 import (
 	"context"
 	"fmt"
+	"image"
 	"log"
+	"math/rand"
+	"os"
 	"os/exec"
 	"sort"
 	"strconv"
@@ -21,7 +24,7 @@ import (
 	"github.com/yhkl-dev/NaviCLI/player"
 )
 
-const dataStartRow = 1
+const dataStartRow = 0
 
 type App struct {
 	tviewApp    *tview.Application
@@ -37,15 +40,14 @@ type App struct {
 	pageSize    int
 	totalPages  int
 
-	rootFlex      *tview.Flex
-	songTable     *tview.Table
-	statusBar     *tview.TextView
-	progressBar   *tview.TextView
-	searchInput   *tview.InputField
-	helpView      *HelpView
-	queueView     *QueueView
-	isSearchMode  bool
-	originalSongs []domain.Song
+	rootFlex         *tview.Flex
+	songTable        *tview.Table
+	statusBar        *tview.TextView
+	progressBar      *tview.TextView
+	searchInput      *tview.InputField
+	helpView         *HelpView
+	isSearchMode     bool
+	originalSongs    []domain.Song
 	audioMonitor     *device.AudioMonitor
 	tickCount        atomic.Int64
 	serverConnected  atomic.Bool
@@ -53,17 +55,20 @@ type App struct {
 	songsMu          sync.RWMutex
 	cachedTermWidth  int
 	lastWidthCheck   time.Time
+	cachedTermHeight int
 	sortMode         int
-	songSource       int // 0=getRandomSongs, 1=getAlbumList2
+	repeatMode       int
+	repeatMu         sync.Mutex
 	leftTitleBar     *tview.TextView
 	rightTitleBar    *tview.TextView
-}
 
-var songSources = []struct {
-	name string
-}{
-	{"Random"},
-	{"Albums"},
+	coverMu           sync.RWMutex
+	coverImg          image.Image
+	coverArtID        string
+	coverReq          uint64
+	coverRendered     string
+	coverRenderedID   string
+	coverRenderedCols int
 }
 
 var sortModes = []struct {
@@ -81,6 +86,13 @@ var sortModes = []struct {
 	}},
 }
 
+// Repeat modes.
+const (
+	repeatOff = iota
+	repeatAll
+	repeatOne
+)
+
 func NewApp(ctx context.Context, cfg *config.Config, lib library.Library, plr player.Player) *App {
 	return &App{
 		tviewApp:    tview.NewApplication(),
@@ -93,6 +105,7 @@ func NewApp(ctx context.Context, cfg *config.Config, lib library.Library, plr pl
 		pageSize:    cfg.UI.PageSize,
 		currentPage: 1,
 		sortMode:    1, // default: Title
+		repeatMode:  repeatAll,
 	}
 }
 
@@ -116,23 +129,11 @@ func (a *App) Stop() {
 }
 
 func (a *App) loadMusic() {
-	fetchSize := a.cfg.UI.FetchSize
-	var songs []domain.Song
-	var err error
-
-	a.songsMu.RLock()
-	src := a.songSource
-	a.songsMu.RUnlock()
-	if src == 0 {
-		songs, err = a.library.GetRandomSongs(fetchSize)
-	} else {
-		songs, err = a.library.GetAlbumSongs("alphabeticalByName")
-	}
-
+	songs, err := a.library.GetAllSongs()
 	if err != nil {
 		a.tviewApp.QueueUpdateDraw(func() {
 			if a.statusBar != nil {
-				a.statusBar.SetText("[red]Failed to load music: " + err.Error())
+				a.statusBar.SetText("[" + tagDanger + "]Failed to load music: " + err.Error())
 			}
 		})
 		return
@@ -214,30 +215,45 @@ func (a *App) monitorConnection() {
 	defer ticker.Stop()
 
 	// Initial ping
-	a.serverConnected.Store(a.library.Ping() == nil)
+	a.refreshConnection(a.library.Ping() == nil)
 
 	for {
 		select {
 		case <-ticker.C:
-			a.serverConnected.Store(a.library.Ping() == nil)
+			a.refreshConnection(a.library.Ping() == nil)
 		case <-a.ctx.Done():
 			return
 		}
 	}
 }
 
+// refreshConnection stores the connection state and redraws the title bar
+// when it changes, so the connection dot in the Now Playing header stays in
+// sync without a full panel redraw.
+func (a *App) refreshConnection(connected bool) {
+	if a.serverConnected.Swap(connected) == connected {
+		return
+	}
+	a.tviewApp.QueueUpdateDraw(a.updateSortTitle)
+}
+
 func (a *App) SortSongs() {
 	a.songsMu.RLock()
 	mode := sortModes[a.sortMode]
 	a.songsMu.RUnlock()
+
+	a.songsMu.Lock()
+	defer a.songsMu.Unlock()
 	if mode.less == nil {
+		// Random: shuffle the whole list in place.
+		rand.Shuffle(len(a.totalSongs), func(i, j int) {
+			a.totalSongs[i], a.totalSongs[j] = a.totalSongs[j], a.totalSongs[i]
+		})
 		return
 	}
-	a.songsMu.Lock()
 	sort.SliceStable(a.totalSongs, func(i, j int) bool {
 		return mode.less(a.totalSongs[i], a.totalSongs[j])
 	})
-	a.songsMu.Unlock()
 }
 
 func (a *App) cycleSortMode() {
@@ -250,24 +266,44 @@ func (a *App) cycleSortMode() {
 	a.updateSortTitle()
 }
 
-func (a *App) cycleSongSource() {
-	a.songsMu.Lock()
-	a.songSource = (a.songSource + 1) % len(songSources)
-	a.songsMu.Unlock()
-	go a.loadMusic()
+func (a *App) repeatModeLocked() int {
+	a.repeatMu.Lock()
+	defer a.repeatMu.Unlock()
+	return a.repeatMode
+}
+
+// cycleRepeat cycles repeat mode: off -> all -> one -> off.
+func (a *App) cycleRepeat() {
+	a.repeatMu.Lock()
+	a.repeatMode = (a.repeatMode + 1) % 3
+	a.repeatMu.Unlock()
 	a.updateSortTitle()
 }
 
 func (a *App) updateSortTitle() {
-	a.songsMu.RLock()
-	mode := sortModes[a.sortMode]
-	src := songSources[a.songSource]
-	a.songsMu.RUnlock()
-	if a.rightTitleBar != nil {
-		a.rightTitleBar.SetText(fmt.Sprintf("[#ffb300]── Library  [darkgray][%s · %s]", src.name, mode.name))
-	}
 	if a.leftTitleBar != nil {
-		a.leftTitleBar.SetText(fmt.Sprintf("[#ffb300]── Now Playing  [darkgray][%s]", mode.name))
+		dot := fmt.Sprintf("[%s]●", tagDanger)
+		if a.serverConnected.Load() {
+			dot = fmt.Sprintf("[%s]●", tagAccent)
+		}
+		repeat := ""
+		switch a.repeatModeLocked() {
+		case repeatAll:
+			repeat = "  [" + tagFgFaint + "]↻"
+		case repeatOne:
+			repeat = "  [" + tagFgFaint + "]↻1"
+		}
+		a.leftTitleBar.SetText(fmt.Sprintf("["+tagFg+"::b]Now playing[-:-:-]  %s%s", dot, repeat))
+	}
+	if a.rightTitleBar != nil {
+		a.songsMu.RLock()
+		count := len(a.totalSongs)
+		mode := sortModes[a.sortMode].name
+		a.songsMu.RUnlock()
+		a.rightTitleBar.SetText(fmt.Sprintf(
+			"["+tagFg+"::b]Library[-:-:-]  ["+tagFgDim+"]Page %d/%d · %d songs[-:-:-]  ["+tagFgFaint+"]%s",
+			a.currentPage, a.totalPages, count, mode,
+		))
 	}
 }
 
@@ -279,29 +315,60 @@ func (a *App) leftPanelTextWidth() int {
 	return w - 4
 }
 
-func (a *App) getTerminalWidth() int {
+// getTerminalSize returns the terminal width and height in one shot, cached for
+// 1s. It tries `stty size` (one subprocess for both dimensions, reading the tty
+// on stdin), falling back to `tput cols`/`tput lines`, then 80x24.
+func (a *App) getTerminalSize() (int, int) {
 	if time.Since(a.lastWidthCheck) < time.Second && a.cachedTermWidth > 0 {
-		return a.cachedTermWidth
+		return a.cachedTermWidth, a.cachedTermHeight
 	}
 	a.lastWidthCheck = time.Now()
 
-	cmd := exec.Command("tput", "cols")
-	output, err := cmd.Output()
-	if err != nil {
-		if a.cachedTermWidth > 0 {
-			return a.cachedTermWidth
-		}
-		return 80
+	w, h := a.cachedTermWidth, a.cachedTermHeight
+	if w <= 0 {
+		w = 80
 	}
-	width, err := strconv.Atoi(strings.TrimSpace(string(output)))
-	if err != nil || width <= 0 {
-		if a.cachedTermWidth > 0 {
-			return a.cachedTermWidth
-		}
-		return 80
+	if h <= 0 {
+		h = 24
 	}
-	a.cachedTermWidth = width
-	return width
+
+	cmd := exec.Command("stty", "size")
+	cmd.Stdin = os.Stdin
+	if out, err := cmd.Output(); err == nil {
+		var rows, cols int
+		if _, err := fmt.Sscanf(string(out), "%d %d", &rows, &cols); err == nil && rows > 0 && cols > 0 {
+			w, h = cols, rows
+			a.cachedTermWidth, a.cachedTermHeight = w, h
+			return w, h
+		}
+	}
+
+	// Fallback: tput cols / tput lines (two subprocesses).
+	if out, err := exec.Command("tput", "cols").Output(); err == nil {
+		if v, err := strconv.Atoi(strings.TrimSpace(string(out))); err == nil && v > 0 {
+			w = v
+		}
+	}
+	if out, err := exec.Command("tput", "lines").Output(); err == nil {
+		if v, err := strconv.Atoi(strings.TrimSpace(string(out))); err == nil && v > 0 {
+			h = v
+		}
+	}
+
+	a.cachedTermWidth, a.cachedTermHeight = w, h
+	return w, h
+}
+
+func (a *App) getTerminalWidth() int {
+	w, _ := a.getTerminalSize()
+	return w
+}
+
+// getTerminalHeight returns the terminal height in rows. Used to cap the cover
+// art height so the now-playing metadata stays visible on short terminals.
+func (a *App) getTerminalHeight() int {
+	_, h := a.getTerminalSize()
+	return h
 }
 
 func (a *App) playSongAtIndex(index int) {
@@ -320,9 +387,10 @@ func (a *App) playSongAtIndex(index int) {
 	a.state.SetLoading(true)
 	a.state.SetCurrentSong(&currentTrack, index)
 	a.state.SetPlaying(false)
+	a.loadCoverArt(&currentTrack)
 
-	loadingStatus := fmt.Sprintf("[#ffb300]%s [darkgray](Loading...)", currentTrack.Title)
-	a.updateStatus(FormatSongInfo(currentTrack, loadingStatus, "", "[darkgray]Vol: [...", a.leftPanelTextWidth(), a.serverConnected.Load(), ""))
+	a.updateStatus(a.nowPlaying(currentTrack, ""))
+	a.updateBottomBar(0, "0:00", FormatDuration(currentTrack.Duration), 0, "["+tagFgDim+"]Loading...", "◷")
 
 	go func() {
 		defer a.state.SetLoading(false)
@@ -330,32 +398,26 @@ func (a *App) playSongAtIndex(index int) {
 			if r := recover(); r != nil {
 				log.Printf("playSongAtIndex panic: %v", r)
 				a.state.SetPlaying(false)
-				failedStatus := fmt.Sprintf("[red]%s [darkgray](Failed)", currentTrack.Title)
-				a.updateStatus(FormatSongInfo(currentTrack, failedStatus, "", "[darkgray]Vol: [...", a.leftPanelTextWidth(), a.serverConnected.Load(), ""))
+				a.updateStatus(a.nowPlaying(currentTrack, ""))
+				a.updateBottomBar(0, "0:00", FormatDuration(currentTrack.Duration), 0, "["+tagDanger+"]Failed", "◷")
 			}
 		}()
 
 		playURL, ok := a.getPlayURL(currentTrack.ID)
 		if !ok {
+			a.updateBottomBar(0, "0:00", FormatDuration(currentTrack.Duration), 0, "["+tagDanger+"]No stream URL", "◷")
 			return
 		}
 
 		if err := a.player.Play(playURL); err != nil {
+			a.updateBottomBar(0, "0:00", FormatDuration(currentTrack.Duration), 0, "["+tagDanger+"]Play failed", "◷")
 			return
 		}
 
-		a.player.AddToQueue(domain.QueueItem{
-			ID:       currentTrack.ID,
-			URI:      playURL,
-			Title:    currentTrack.Title,
-			Artist:   currentTrack.Artist,
-			Duration: currentTrack.Duration,
-		})
-
 		a.state.SetPlaying(true)
 
-		playingStatus := fmt.Sprintf("[#ffb300]▶ PLAYING")
-		a.updateStatus(FormatSongInfo(currentTrack, playingStatus, "◴", "[darkgray]Vol: [...", a.leftPanelTextWidth(), a.serverConnected.Load(), CreatePlayingExtras(currentTrack, a.leftPanelTextWidth())))
+		a.updateStatus(a.nowPlaying(currentTrack, CreateTrackExtras(currentTrack)))
+		a.updateBottomBar(0, "0:00", FormatDuration(currentTrack.Duration), 0, "["+tagAccent+"]▶ PLAYING", "◴")
 
 		a.tviewApp.QueueUpdateDraw(func() {
 			a.renderSongTable()
@@ -382,13 +444,22 @@ func (a *App) playNextSong() {
 		return
 	}
 
+	repeat := a.repeatModeLocked()
+	if repeat == repeatOne {
+		go a.playSongAtIndex(currentIndex)
+		return
+	}
+
 	nextIndex := currentIndex + 1
 	a.songsMu.RLock()
-	if nextIndex >= len(a.totalSongs) {
+	n := len(a.totalSongs)
+	a.songsMu.RUnlock()
+	if nextIndex >= n {
+		if repeat == repeatOff {
+			return
+		}
 		nextIndex = 0
 	}
-	a.songsMu.RUnlock()
-
 	go a.playSongAtIndex(nextIndex)
 }
 
@@ -442,11 +513,35 @@ func (a *App) volumeDown() {
 	a.player.SetVolume(newVol)
 }
 
+// seekForward skips 10 seconds ahead.
+func (a *App) seekForward() {
+	if err := a.player.Seek(10); err != nil {
+		log.Printf("seek forward: %v", err)
+	}
+}
+
+// seekBackward rewinds 10 seconds.
+func (a *App) seekBackward() {
+	if err := a.player.Seek(-10); err != nil {
+		log.Printf("seek backward: %v", err)
+	}
+}
+
 // updateStatus updates the status bar
 func (a *App) updateStatus(info string) {
 	a.tviewApp.QueueUpdateDraw(func() {
 		if a.statusBar != nil {
 			a.statusBar.SetText(info)
+		}
+	})
+}
+
+// updateBottomBar updates the bottom transport strip (progress, time, volume,
+// status). This is the single home for live state.
+func (a *App) updateBottomBar(progress float64, currentTime, totalTime string, volume float64, statusLabel, spinner string) {
+	a.tviewApp.QueueUpdateDraw(func() {
+		if a.progressBar != nil {
+			a.progressBar.SetText(CreateBottomBar(progress, a.cfg.UI.ProgressBarWidth, currentTime, totalTime, volume, statusLabel, spinner))
 		}
 	})
 }
@@ -466,6 +561,7 @@ func (a *App) nextPage() {
 		a.currentPage++
 		a.renderSongTable()
 		a.updateStatusWithPageInfo()
+		a.songTable.Select(0, 0)
 	}
 }
 
@@ -475,25 +571,30 @@ func (a *App) previousPage() {
 		a.currentPage--
 		a.renderSongTable()
 		a.updateStatusWithPageInfo()
+		data := a.getCurrentPageData()
+		if len(data) > 0 {
+			a.songTable.Select(2*(len(data)-1), 0)
+		}
 	}
 }
 
-// updateStatusWithPageInfo updates status bar with page information
+// updateStatusWithPageInfo refreshes the library title bar (page/sort info, via
+// updateSortTitle) and, when idle, the left welcome panel. The page/sort info
+// lives in the right title bar now, not appended to the welcome.
 func (a *App) updateStatusWithPageInfo() {
-	a.songsMu.RLock()
-	songCount := len(a.totalSongs)
-	a.songsMu.RUnlock()
-	pageInfo := fmt.Sprintf("[gray]Page %d/%d | %d songs total",
-		a.currentPage, a.totalPages, songCount)
+	a.updateSortTitle()
 
 	currentSong, _, isPlaying, _ := a.state.GetState()
 	if currentSong != nil && isPlaying {
-		// Keep current playing info if song is playing
+		// Keep current playing info in the left panel.
 		return
 	}
 
+	a.songsMu.RLock()
+	songCount := len(a.totalSongs)
+	a.songsMu.RUnlock()
 	if a.statusBar != nil {
-		a.statusBar.SetText(CreateWelcomeMessage(len(a.totalSongs)) + "\n\n" + pageInfo)
+		a.statusBar.SetText(CreateWelcomeMessage(songCount))
 	}
 }
 
@@ -501,26 +602,22 @@ func (a *App) updateStatusWithPageInfo() {
 func (a *App) moveRowDown() {
 	row, _ := a.songTable.GetSelection()
 	data := a.getCurrentPageData()
-	if row < len(data)-1 {
-		a.songTable.Select(row+1, 0)
-	} else if row == len(data)-1 && a.currentPage < a.totalPages {
-		// Auto-move to next page when reaching end of current page
+	songIdx := row / 2
+	if songIdx < len(data)-1 {
+		a.songTable.Select(2*(songIdx+1), 0)
+	} else if a.currentPage < a.totalPages {
 		a.nextPage()
-		a.songTable.Select(0, 0)
 	}
 }
 
 // moveRowUp moves selection up in the song table
 func (a *App) moveRowUp() {
 	row, _ := a.songTable.GetSelection()
-	if row > 0 {
-		a.songTable.Select(row-1, 0)
-	} else if row == 0 && a.currentPage > 1 {
+	songIdx := row / 2
+	if songIdx > 0 {
+		a.songTable.Select(2*(songIdx-1), 0)
+	} else if a.currentPage > 1 {
 		a.previousPage()
-		data := a.getCurrentPageData()
-		if len(data) > 0 {
-			a.songTable.Select(len(data)-1, 0)
-		}
 	}
 }
 
@@ -540,13 +637,6 @@ func (a *App) goToLastPage() {
 		a.updateStatusWithPageInfo()
 		a.songTable.Select(dataStartRow, 0)
 	}
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
 
 func (a *App) startAudioMonitor() {
@@ -581,12 +671,28 @@ func (a *App) onAudioDeviceDisconnected() {
 		return
 	}
 
-	pausedStatus := fmt.Sprintf("[#ff9800]⏸ PAUSED")
-	statusText := FormatSongInfo(*currentSong, pausedStatus, "◷", "[darkgray]Vol: [...", a.leftPanelTextWidth(), a.serverConnected.Load(), "")
+	currentPos, _, err := a.player.GetProgress()
+	if err != nil || currentPos < 0 {
+		currentPos = 0
+	}
 
-	a.tviewApp.QueueUpdateDraw(func() {
-		if a.statusBar != nil {
-			a.statusBar.SetText(statusText)
+	// The song's metadata duration is the single source of truth for the
+	// total, matching playSongAtIndex. The player's reported length can drift
+	// by a fraction of a second and would make the total jump between paths.
+	totalDuration := float64(currentSong.Duration)
+	progress := 0.0
+	if totalDuration > 0 {
+		progress = currentPos / totalDuration
+		if progress > 1 {
+			progress = 1
 		}
-	})
+	}
+
+	vol := 0.0
+	if v, err := a.player.GetVolume(); err == nil {
+		vol = v
+	}
+
+	a.updateStatus(a.nowPlaying(*currentSong, CreateTrackExtras(*currentSong)))
+	a.updateBottomBar(progress, FormatDuration(int(currentPos)), FormatDuration(currentSong.Duration), vol, "["+tagWarn+"]⏸ PAUSED", "◷")
 }
